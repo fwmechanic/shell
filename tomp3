@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# instructions: copy into ffmpeg/bin directory (containing ffmpeg.exe, duh)
+
+# NB: transcoding .wav from ancient Samsung recorder with any of
+#   "-b:a 192K"
+#   "-b:a 128K"
+#   "-b:a 64K"
+# results in an identically-sized mp3 file (Which is ~ 2x size of .wav, so I'm guessing it's because of mono->stereo).
+# Omitting -b:a results in a 32K encoding which results in a very tiny mp3 file having significant audio quality degradation.
+# ./ffmpeg -i "$1" -f mp3 -b:a 192K "${1%.*}".mp3
+
+# per https://trac.ffmpeg.org/wiki/Encode/MP3  highest quality VBR == "-q:a 0" which results in file size ~ 1.3x
+
+# see %~dp0mergemp3 for windows ffmpeg download links
+
+ffmpeg -i "$1" -f mp3 -q:a 0 "${1%.*}".mp3

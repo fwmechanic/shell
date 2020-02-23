@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# info sources:
+
+# https://stackoverflow.com/a/50713910
+# https://stackoverflow.com/a/22021857
+# https://stackoverflow.com/a/45396503
+# https://www.ibm.com/developerworks/library/x-starlet/index.html
+# https://www.joyofdata.de/blog/transforming-xml-document-into-csv-using-xmlstarlet/
+# xml = xmlstarlet (1.6.1+)           https://en.wikipedia.org/wiki/XMLStarlet                    xmlstarlet-1.6.1-win32.zip
+# tidy = "HTML Tidy Project" (5.6.0)  http://www.html-tidy.org/   http://binaries.html-tidy.org/  tidy-5.6.0-vc14-64b.zip
+
+# what's amazing is that these 2 tools are TINY; <2MB exe each!  I think the reasons for this are:
+# 1. they date back to the beginning of the WWW...
+# 2. they are somewhat "reference implementations"; they are based on pure data structures (input or output)
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+[[ "$1" ]] || die "missing URL param(s)"
+oofnm="${1##*/}.html"  # bash-intrinsic version of basename  https://stackoverflow.com/a/965072
+# in order for "$oofnm" to be nicely converted by calibre (e2pm), need to prefix this _rudimentary_ header:
+cat <<'HEREDOC' > "$oofnm"
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+<head>
+HEREDOC
+
+   # `./xml el -v tidied-html-file` yields a list of the xpaths of all entities (_plus_ their
+   #                                attributes and values) in tidied-html-file.
+   #                                This list provides the basis for `xml sel -c/-v [param values]`
+   # xpath_story_item was plucked directly from `xml el -v tidied-html-file` output:
+   dv="/_:div" mn="/_:main"
+   item_xpath_hd="/_:html/_:body$dv"
+   item_xpath_tl="/_:section/_:article$dv$dv[@class='story-item']"
+   item_xpath_story="$item_xpath_hd$dv$mn$item_xpath_tl"
+   item_xpath_post_="$item_xpath_hd$mn$dv$item_xpath_tl"
+
+for url in "$@"; do
+
+   fnm="${url##*/}"  # bash-intrinsic version of basename  https://stackoverflow.com/a/965072
+   rm -f "$fnm"
+   curl -sSO "$url" || die
+   echo "curl OK $fnm"
+   [[ -f "$fnm" ]] || die "curl OK but no file $fnm"
+
+   tidy -q -numeric -asxhtml --show-warnings no "$fnm" | xml sel -t -c "$item_xpath_story" -c "$item_xpath_post_" >> "$oofnm"
+   rm -f "$fnm"
+
+done
+
+cmd //c e2pm.bat "$oofnm"

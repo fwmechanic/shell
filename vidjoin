@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# join videos out0.mp4 and out1.mp4 into out0.mp4
+#
+# 20191121 wrote
+#
+# usage: vidjoin
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+dfltofnm="out.mp4"
+listfnm="ffmpg_join.tmp"
+# ffmpeg -i "concat:out0.mp4|out1.mp4" -c copy "$dfltofnm"
+
+rm -f "$listfnm" || die
+cat <<'HEREDOC' > "$listfnm"
+file 'out0.mp4'
+file 'out1.mp4'
+HEREDOC
+# stdin process substitution '>( echo "file 'out0.mp4'" ; echo "file 'out1.mp4'" )'
+
+{ set -x 2> /dev/null ; }
+# ffmpeg -hide_banner -y -f concat -safe 0 -i "$listfnm" -c copy "$dfltofnm"
+  ffmpeg -hide_banner -y -f concat -safe 0 -i >( echo "file 'out0.mp4'" ; echo "file 'out1.mp4'" ) -c copy "$dfltofnm"

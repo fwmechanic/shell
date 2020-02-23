@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# purpose: turn an input archive file (zip, rar) into a FLAT zip having a single directory bearing the basename of the source file (using z1d)
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+echo "------------------------------- zf starting   -------------------------------"
+
+[[ "$1" ]] || die "missing archivenm param"
+[[ -f "$1" ]] || die "$1 is not a file"
+
+echo "arg=$1'"
+sanspath="${1##*/}"       ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+sansext="${sanspath%.*}"  ; echo "sansext=$sansext'"
+[[ -d "$sansext" ]] && die "dir $sansext already exists"
+
+mkdir_or_die() {
+   [[ -d "$1" ]] || mkdir "$1" || die "could not mkdir $1"
+   [[ -d "$1" ]] ||               die "mkdir $1 failed"
+   }
+zfdin="./_zf_in"    ; mkdir_or_die  "$zfdin"   # when making a bulk run, it's handy to be able to verify outcome by comparing the # of
+zfdout="./_zf_out"  ; mkdir_or_die  "$zfdout"  # in vs out files (empty before starting! TODO: add a common date-code prefix to $zfdin & $zfdout)
+
+7z e -o"$sansext" "$1" || die "7z extraction failed"
+(cd "$sansext" && find . -type d -empty -delete)   # `7z e ...` can create empty dirs in output dir: delete them
+mv "$1" "$zfdin/"  # move input file (which might be a zip file) out of the way for z1d
+z1d "$sansext" || die "z1d failed"
+z1dof="$sansext.zip"
+[[ -f "$z1dof" ]] || die "expected z1d output file not found: $z1dof"
+mv "$z1dof" "$zfdout/"
+z1d_okdir="z1d_$sansext"
+[[ -d "$z1d_okdir" ]] || die "expected z1d-renamed dir not found: $z1d_okdir"
+rm -rf "$z1d_okdir"
+
+echo "------------------------------- zf successful -------------------------------"

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# Why: some downloaded videos contain varying amount of preamble that is
+# uninteresting and takes up disk space and viewing time while delivering no
+# value.  This script uses ffmpeg to truncate such a prefix/preamble from a
+# video file.
+
+# 20190707 wrote  really simple stuff
+#
+# usage: vidpfxrmv fname mm:ss
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+[[ "$2" ]] || die "missing mm:ss param"
+[[ -f "$1" ]] || die "$1 is not a file"
+
+{ set -x 2> /dev/null ; }
+
+# NB: ffmpeg argments are ORDER SENSITIVE!!!  http://www.markbuckler.com/post/cutting-ffmpeg/  (see "All-Frame Seeking")
+ffmpeg -hide_banner -y -i "$1" -c copy -to "$2" out.mp4

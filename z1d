@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Why: to package filesets to be posted on a web server for download (http
+# doesn't trivially support downloading of a group of files) into a single
+# zip file, containing 1 top-level entry, the source directory (named by $1),
+# that can be up/downloaded as a unit.
+#
+# NO DATA COMPRESSION is performed while zipping; source data is assumed to
+# be compressed (mp3, etc.).
+#
+# You'd think this script superfluous: just write the one-liner zip command
+# line each time, but sadly, not so.
+#
+# 20180630 wrote
+#
+# usage: z1d dirname
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+[[ "$1" ]] || die "missing dirname param"
+[[ -d "$1" ]] || die "$1 is not a dir"
+echo "base=$1'"
+notrs="${1%/}"
+echo "notrs=$notrs'"
+vfnm="SHA1SUMS"
+if [[ ! -f "$1/$vfnm" ]]; then
+   echo "generating $vfnm" ; ( cd "$1" && sha1sum * > "$vfnm" )            || die "$vfnm generation FAILED"
+   echo "verifying $vfnm"  ; ( cd "$1" && sha1sum -c  "$vfnm" >/dev/null ) || die "$vfnm self-verification FAILED"
+fi
+
+{ set -x 2> /dev/null ; }
+
+# ****
+# **** DO NOT USE INFO-ZIP zip (2.32 or older): it fails to read/include files/dirs containing '[' or ']' characters
+# ****
+# ****    from 2004 https://groups.google.com/forum/#!topic/alt.msdos.batch.nt/8-rYNhMtsw4
+# ****
+# zip -v -0 -r "${notrs}.zip" "$notrs" || die "zip failed"   # https://stackoverflow.com/questions/1848415/remove-slash-from-the-end-of-a-variable
+
+# 7z (18.05) can create zip files, and is MAINTAINED(!)
+7z a -tzip -mx0 "${notrs}.zip" "$notrs" || die "7z failed"
+mv "$1" z1d_"$1"
