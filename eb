@@ -28,7 +28,8 @@ excl_nonebook_files() (
    xdnm="interesting_files"
    mkdir_or_die "$xdnm"
    rm -rf "$xdnm"/*   # in case dir already existed, nuke its content
-   find . -type f \( -iname "*.txt" -or -iname "*.html" \) -delete  # rmv typical "advertising" files embedded in www downloads; extensions that never contain content we want to keep
+   # rmv typical "advertising" files embedded in www downloads; extensions that never contain content we want to keep
+   find . -type f \( -iname "*.txt" -or -iname "*.html" -or -iname "*.jpg"  -or -iname "*.jpeg" -or -iname "*.png" \) -delete
    find . -type f ! \( -iname "*.epub" -or -iname "*.azw3" -or -iname "*.mobi" -or -iname "*.pdf" -or -iname "*.zip" \) -exec mv {} "$xdnm/" \;  # *.zip: "accompanying code" files
    rmdir "$xdnm" || die "$xdnm is not empty!"  # if nothing left, rmdir will succeed
    if [[ "$1" ]]; then
