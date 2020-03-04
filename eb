@@ -24,7 +24,7 @@ zfdout="./_output"  ; mkdir_or_die "$zfdout"  # in vs out files (empty before st
 # purpose: given a typical ebook archive file (zip, rar) extracted into $sansext, delete non-ebook files and rename ebook files $sansext.ext
 
 excl_nonebook_files() (
-   set -e
+   echo "eb before" ; find . -type f -print | sed 's/^/   /'
    xdnm="interesting_files"
    mkdir_or_die "$xdnm"
    rm -rf "$xdnm"/*   # in case dir already existed, nuke its content
@@ -36,6 +36,7 @@ excl_nonebook_files() (
       newnm="$1"
       find . -type f | while read file; do mv "$file" "$newnm.${file##*.}" ; done   # https://stackoverflow.com/a/8489394
    fi
+   echo "eb after" ; find . -type f -print | sed 's/^/   /'
    )
 
 (cd "$sansext" && excl_nonebook_files "$sansext") || die "excl_nonebook_files failed"
