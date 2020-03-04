@@ -20,5 +20,5 @@ HEREDOC
 # stdin process substitution '>( echo "file 'out0.mp4'" ; echo "file 'out1.mp4'" )'
 
 { set -x 2> /dev/null ; }
-# ffmpeg -hide_banner -y -f concat -safe 0 -i "$listfnm" -c copy "$dfltofnm"
-  ffmpeg -hide_banner -y -f concat -safe 0 -i >( echo "file 'out0.mp4'" ; echo "file 'out1.mp4'" ) -c copy "$dfltofnm"
+# ffmpeg -hide_banner -y -f concat -safe 0 -i >( echo "file 'out0.mp4'" ; echo "file 'out1.mp4'" ) -c copy "$dfltofnm"
+  ffmpeg -hide_banner -y -f concat -safe 0 -i "$listfnm" -c copy "$dfltofnm"
