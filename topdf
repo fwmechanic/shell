@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+echo "arg=$1'"
+[[ -f "$1" ]] || die "$1 does not name a file"
+sanspath="${1##*/}"           ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+sansext="${sanspath%.*}"      ; echo "sansext=$sansext'"
+
+srcfnm="$1"                   ; echo "srcfnm=$srcfnm'"
+tgtfnm="$sansext.medtype.pdf" ; echo "tgtfnm=$tgtfnm'"
+[[ -f "$tgtfnm" ]] && die "file $sansext already exists"
+
+convert_to_pdf() (
+   # https://manual.calibre-ebook.com/generated/en/ebook-convert.html#pdf-output-options
+   margin_pts=3
+   set -x  # show actual cmdline
+   "$1" "$2" "$3" --output-profile=ipad --use-profile-size \
+ --pdf-page-margin-bottom=$margin_pts \
+ --pdf-page-margin-left=$margin_pts \
+ --pdf-page-margin-right=$margin_pts \
+ --pdf-page-margin-top=$margin_pts
+   )
+
+ecxbnm="ebook-convert"
+if command -v "$ecxbnm"; then
+   convert_to_pdf "$ecx" "$srcfnm" "$tgtfnm"
+   exit $?
+fi
+
+declare -a calibre_locns=( "$HOME/my/bin"  "$LOCALAPPDATA/Programs" )
+probe_ecexe() (
+   ecexe="$1/Calibre Portable/Calibre/$ecxbnm.exe"
+   if [[ -x "$ecexe" ]]; then
+      echo "$ecexe"
+   fi
+   )
+
+for dnm in "${calibre_locns[@]}"; do
+   ecx="$(probe_ecexe "$dnm")"
+   if [[ "$ecx" ]]; then
+      convert_to_pdf "$ecx" "$srcfnm" "$tgtfnm"
+      exit $?
+   fi
+   done
+die "$ecxbnm is not in PATH or ${calibre_locns[@]}"
