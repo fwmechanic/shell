@@ -2,14 +2,24 @@
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 
-echo "arg=$1'"
-[[ -f "$1" ]] || die "$1 does not name a file"
-sanspath="${1##*/}"           ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
-sansext="${sanspath%.*}"      ; echo "sansext=$sansext'"
+find_ec_binary() (
+   ecxbnm="ebook-convert"
+   if command -v "$ecxbnm"; then
+      echo "$ecxbnm"
+      return 0
+   fi
 
-srcfnm="$1"                   ; echo "srcfnm=$srcfnm'"
-tgtfnm="$sansext.medtype.pdf" ; echo "tgtfnm=$tgtfnm'"
-[[ -f "$tgtfnm" ]] && die "file $sansext already exists"
+   declare -a calibre_locns=( "$HOME/my/bin"  "$LOCALAPPDATA/Programs" )
+   for dnm in "${calibre_locns[@]}"; do
+      ecexe="$dnm/Calibre Portable/Calibre/$ecxbnm.exe"
+      if [[ -x "$ecexe" ]]; then
+         echo "$ecexe"
+         return 0
+      fi
+   done
+   die "$ecxbnm is not in PATH or ${calibre_locns[@]}"
+   )
+ecbin="$(find_ec_binary)"
 
 convert_to_pdf() (
    # https://manual.calibre-ebook.com/generated/en/ebook-convert.html#pdf-output-options
@@ -22,25 +32,17 @@ convert_to_pdf() (
  --pdf-page-margin-top=$margin_pts
    )
 
-ecxbnm="ebook-convert"
-if command -v "$ecxbnm"; then
-   convert_to_pdf "$ecx" "$srcfnm" "$tgtfnm"
-   exit $?
-fi
+for fnm in "$@"; do
+   echo "arg=$fnm'"
+   [[ -f "$fnm" ]] || die "$fnm does not name a file"
+   sanspath="${fnm##*/}"         ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+   sansext="${sanspath%.*}"      ; echo "sansext=$sansext'"
 
-declare -a calibre_locns=( "$HOME/my/bin"  "$LOCALAPPDATA/Programs" )
-probe_ecexe() (
-   ecexe="$1/Calibre Portable/Calibre/$ecxbnm.exe"
-   if [[ -x "$ecexe" ]]; then
-      echo "$ecexe"
+   srcfnm="$fnm"                 ; echo "srcfnm=$srcfnm'"
+   tgtfnm="$sansext.medtype.pdf" ; echo "tgtfnm=$tgtfnm'"
+   if [[ -f "$tgtfnm" ]]; then
+      echo "file $sansext already exists"
+   else
+      convert_to_pdf "$ecbin" "$srcfnm" "$tgtfnm"
    fi
-   )
-
-for dnm in "${calibre_locns[@]}"; do
-   ecx="$(probe_ecexe "$dnm")"
-   if [[ "$ecx" ]]; then
-      convert_to_pdf "$ecx" "$srcfnm" "$tgtfnm"
-      exit $?
-   fi
-   done
-die "$ecxbnm is not in PATH or ${calibre_locns[@]}"
+done
