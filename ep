@@ -17,7 +17,7 @@ find_ec_binary() (
          return 0
       fi
    done
-   die "$ecxbnm is not in PATH or ${calibre_locns[@]}"
+   die "$ecxbnm is not in PATH or ${calibre_locns[*]}"
    )
 ecbin="$(find_ec_binary)"
 

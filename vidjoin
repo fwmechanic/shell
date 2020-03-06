@@ -12,7 +12,7 @@ dfltofnm="out.mp4"
 listfnm="ffmpg_join.tmp"
 # ffmpeg -i "concat:out0.mp4|out1.mp4" -c copy "$dfltofnm"
 
-rm -f "$listfnm" || die
+rm -f "$listfnm" || die "rm failed?"
 cat <<'HEREDOC' > "$listfnm"
 file 'out0.mp4'
 file 'out1.mp4'

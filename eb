@@ -13,7 +13,7 @@ excl_nonebook_files() (
    echo "eb before" ; find . -type f -print | sed 's/^/   /'
    xdnm="interesting_files"
    mkdir_or_die "$xdnm"
-   rm -rf "$xdnm"/*   # in case dir already existed, nuke its content
+   rm -rf "$xdnm:?"/*   # in case dir already existed, nuke its content
    # rmv typical "advertising" files embedded in www downloads; extensions that never contain content we want to keep
    find . -type f \( -iname "*.txt" -or -iname "*.html" -or -iname "*.jpg"  -or -iname "*.jpeg" -or -iname "*.png" \) -delete
    find . -type f ! \( -iname "*.epub" -or -iname "*.azw3" -or -iname "*.mobi" -or -iname "*.pdf" -or -iname "*.zip" \) -exec mv {} "$xdnm/" \;  # *.zip: "accompanying code" files

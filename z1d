@@ -24,7 +24,7 @@ notrs="${1%/}"
 echo "notrs=$notrs'"
 vfnm="SHA1SUMS"
 if [[ ! -f "$1/$vfnm" ]]; then
-   echo "generating $vfnm" ; ( cd "$1" && sha1sum * > "$vfnm" )            || die "$vfnm generation FAILED"
+   echo "generating $vfnm" ; ( cd "$1" && sha1sum -- * > "$vfnm" )         || die "$vfnm generation FAILED"
    echo "verifying $vfnm"  ; ( cd "$1" && sha1sum -c  "$vfnm" >/dev/null ) || die "$vfnm self-verification FAILED"
 fi
 

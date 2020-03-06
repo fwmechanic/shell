@@ -31,7 +31,7 @@ HEREDOC
    # xpath_story_item was plucked directly from `xml el -v tidied-html-file` output:
    dv="/_:div" mn="/_:main"
    item_xpath_hd="/_:html/_:body$dv"
-   item_xpath_tl="/_:section/_:article$dv$dv[@class='story-item']"
+   item_xpath_tl="/_:section/_:article$dv$dv"'[@'"class='story-item']"
    item_xpath_story="$item_xpath_hd$dv$mn$item_xpath_tl"
    item_xpath_post_="$item_xpath_hd$mn$dv$item_xpath_tl"
 
