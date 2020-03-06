@@ -25,7 +25,7 @@ convert_to_pdf() (
    # https://manual.calibre-ebook.com/generated/en/ebook-convert.html#pdf-output-options
    margin_pts=3
    set -x  # show actual cmdline
-   "$1" "$2" "$3" --output-profile=ipad --use-profile-size \
+   "$ecbin" "$1" "$2" --output-profile=ipad --use-profile-size \
  --pdf-page-margin-bottom=$margin_pts \
  --pdf-page-margin-left=$margin_pts \
  --pdf-page-margin-right=$margin_pts \
@@ -35,19 +35,23 @@ convert_to_pdf() (
 for fnm in "$@"; do
    echo "arg=$fnm'"
    [[ -f "$fnm" ]] || die "$fnm does not name a file"
-   if [[ $fnm != */* ]]; then
-      fpath=""
+   ext="${fnm##*.}"
+   if [[ "$ext" && "${ext^^}" == "PDF" ]]; then  # don't try to convert a PDF to PDF
+      echo "skipping $ext $fnm"
    else
-      fpath="${fnm%/*}/"
-   fi                            ; echo "fpath=$fpath'"
-   sanspath="${fnm##*/}"         ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
-   sansext="${sanspath%.*}"      ; echo "sansext=$sansext'"
-
-   srcfnm="$fnm"                       ; echo "srcfnm=$srcfnm'"
-   tgtfnm="$fpath$sansext.medtype.pdf" ; echo "tgtfnm=$tgtfnm'"
-   if [[ -f "$tgtfnm" ]]; then
-      echo "file $sansext already exists"
-   else
-      convert_to_pdf "$ecbin" "$srcfnm" "$tgtfnm"
+      if [[ $fnm != */* ]]; then
+         fpath=""
+      else
+         fpath="${fnm%/*}/"
+      fi                            ; echo "fpath=$fpath'"
+      sanspath="${fnm##*/}"         ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+      sansext="${sanspath%.*}"      ; echo "sansext=$sansext'"
+      srcfnm="$fnm"                       ; echo "srcfnm=$srcfnm'"
+      tgtfnm="$fpath$sansext.medtype.pdf" ; echo "tgtfnm=$tgtfnm'"
+      if [[ -f "$tgtfnm" ]]; then
+         echo "file $sansext already exists"
+      else
+         convert_to_pdf "$srcfnm" "$tgtfnm"
+      fi
    fi
 done
