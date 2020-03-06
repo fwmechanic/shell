@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+[[ -n "$1" ]] || die "missing shell-script-filename"
+
+out=$1.schk
+# set -x
+# SC1017 file contains DOS newlines  KG: on Git for Windows bash this is not a problem, so ignore
+shellcheck -f gcc -e SC1017 "$1" > "$out"
+if [[ "$(wc -l "$out" | cut -d ' ' -f 1)" -gt 0 ]]; then
+   edittempsync "$out"
+else
+   echo "$1 is clean"
+fi
+rm -f "$out"

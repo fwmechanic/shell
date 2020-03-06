@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+[[ -n "$1" ]] || die "missing shell-script-filename"
+
+"${GIT_EDITOR:-"${EDITOR:-"k"}"}" -t "$@"
