@@ -23,13 +23,9 @@ ecbin="$(find_ec_binary)"
 
 convert_to_pdf() (
    # https://manual.calibre-ebook.com/generated/en/ebook-convert.html#pdf-output-options
-   margin_pts=3
+   mpts="3" mpo='--pdf-page-margin-'
    set -x  # show actual cmdline
-   "$ecbin" "$1" "$2" --output-profile=ipad --use-profile-size \
- --pdf-page-margin-bottom=$margin_pts \
- --pdf-page-margin-left=$margin_pts \
- --pdf-page-margin-right=$margin_pts \
- --pdf-page-margin-top=$margin_pts
+   "$ecbin" "$1" "$2" --output-profile=ipad --use-profile-size "${mpo}bottom=$mpts" "${mpo}left=$mpts" "${mpo}right=$mpts" "${mpo}top=$mpts"
    )
 
 do1file() (
@@ -37,21 +33,32 @@ do1file() (
    [[ -f "$fnm" ]] || die "$fnm does not name a file"
    ext="${fnm##*.}"
    if [[ "$ext" && "${ext^^}" == "PDF" ]]; then  # don't try to convert a PDF to PDF
-      echo "skipping $ext $fnm"
+      echo "skipping: src is $ext '$fnm'"
    else
       if [[ $fnm != */* ]]; then
          fpath=""
       else
          fpath="${fnm%/*}/"
-      fi                            ; echo "fpath=$fpath'"
-      sanspath="${fnm##*/}"         ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
-      sansext="${sanspath%.*}"      ; echo "sansext=$sansext'"
-      srcfnm="$fnm"                       ; echo "srcfnm=$srcfnm'"
-      tgtfnm="$fpath$sansext.medtype.pdf" ; echo "tgtfnm=$tgtfnm'"
+      fi                                  # ; echo "fpath=$fpath'"
+      sanspath="${fnm##*/}"               # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+      sansext="${sanspath%.*}"            # ; echo "sansext=$sansext'"
+      srcfnm="$fnm"                       # ; echo "srcfnm=$srcfnm'"
+      tgtfnm="$fpath$sansext.medtype.pdf" # ; echo "tgtfnm=$tgtfnm'"
       if [[ -f "$tgtfnm" ]]; then
-         echo "file $sansext already exists"
+         echo "skipping: tgtfnm exists '$tgtfnm'"
       else
-         convert_to_pdf "$srcfnm" "$tgtfnm"
+         logfnm="$fpath$sansext.log"      # ; echo "logfnm=$logfnm'"
+         if [[ -f "$logfnm" ]]; then
+            echo "skipping: logfile exists '$tgtfnm'"
+         else
+            echo "creating: $tgtfnm"
+            if >"$logfnm" 2>&1 convert_to_pdf "$srcfnm" "$tgtfnm"; then
+               # echo "log deleted"
+               rm -f "${logfnm:?}"
+            else
+               echo "FAILED: see '${logfnm}'"
+            fi
+         fi
       fi
    fi
    )
