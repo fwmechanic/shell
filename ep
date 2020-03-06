@@ -32,8 +32,8 @@ convert_to_pdf() (
  --pdf-page-margin-top=$margin_pts
    )
 
-for fnm in "$@"; do
-   echo "arg=$fnm'"
+do1file() (
+   fnm="$1"
    [[ -f "$fnm" ]] || die "$fnm does not name a file"
    ext="${fnm##*.}"
    if [[ "$ext" && "${ext^^}" == "PDF" ]]; then  # don't try to convert a PDF to PDF
@@ -54,4 +54,8 @@ for fnm in "$@"; do
          convert_to_pdf "$srcfnm" "$tgtfnm"
       fi
    fi
+   )
+
+for fnm in "$@"; do
+   do1file "$fnm"
 done

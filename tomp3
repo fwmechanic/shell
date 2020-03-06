@@ -14,4 +14,10 @@
 
 # see %~dp0mergemp3 for windows ffmpeg download links
 
-ffmpeg -i "$1" -f mp3 -q:a 0 "${1%.*}".mp3
+do1file() (
+   ffmpeg -i "$1" -f mp3 -q:a 0 "${1%.*}".mp3
+   )
+
+for fnm in "$@"; do
+   do1file "$fnm"
+done
