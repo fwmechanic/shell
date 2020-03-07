@@ -44,11 +44,11 @@ do1file() (
       sansext="${sanspath%.*}"            # ; echo "sansext=$sansext'"
       srcfnm="$fnm"                       # ; echo "srcfnm=$srcfnm'"
       tgtfnm="$fpath$sansext.medtype.pdf" # ; echo "tgtfnm=$tgtfnm'"
-      if [[ -f "$tgtfnm" ]]; then
+      if [[ -f "$tgtfnm" && "$tgtfnm" -nt "$srcfnm" ]]; then
          echo "skipping: tgtfnm exists '$tgtfnm'"
       else
          logfnm="$fpath$sansext.log"      # ; echo "logfnm=$logfnm'"
-         if [[ -f "$logfnm" ]]; then
+         if [[ -f "$logfnm" && "$logfnm" -nt "$srcfnm" ]]; then
             echo "skipping: logfile exists '$tgtfnm'"
          else
             echo "creating: $tgtfnm"
