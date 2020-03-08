@@ -2,6 +2,8 @@
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 
+optq=0
+
 find_ec_binary() (
    ecxbnm="ebook-convert"
    if command -v "$ecxbnm"; then
@@ -30,10 +32,13 @@ convert_to_pdf() (
 
 do1file() (
    fnm="$1"
-   [[ -f "$fnm" ]] || die "$fnm does not name a file"
+   if [[ ! -f "$fnm" ]]; then
+      ((optq!=0)) || echo "$fnm does not name a file"
+      return
+   fi
    ext="${fnm##*.}"
    if [[ "$ext" && "${ext^^}" == "PDF" ]]; then  # don't try to convert a PDF to PDF
-      echo "skipping: src is $ext '$fnm'"
+      ((optq!=0)) || echo "skipping: src is $ext '$fnm'"
    else
       if [[ $fnm != */* ]]; then
          fpath=""
@@ -45,11 +50,11 @@ do1file() (
       srcfnm="$fnm"                       # ; echo "srcfnm=$srcfnm'"
       tgtfnm="$fpath$sansext.medtype.pdf" # ; echo "tgtfnm=$tgtfnm'"
       if [[ -f "$tgtfnm" && "$tgtfnm" -nt "$srcfnm" ]]; then
-         echo "skipping: tgtfnm exists '$tgtfnm'"
+         ((optq!=0)) || echo "skipping: tgtfnm exists '$tgtfnm'"
       else
          logfnm="$fpath$sansext.log"      # ; echo "logfnm=$logfnm'"
          if [[ -f "$logfnm" && "$logfnm" -nt "$srcfnm" ]]; then
-            echo "skipping: logfile exists '$tgtfnm'"
+            ((optq!=0)) || echo "skipping: logfile exists '$tgtfnm'"
          else
             echo "creating: $tgtfnm"
             if >"$logfnm" 2>&1 convert_to_pdf "$srcfnm" "$tgtfnm"; then
@@ -62,6 +67,17 @@ do1file() (
       fi
    fi
    )
+
+# parse options
+argerr() {  die "usage: $0 [-q] FILE..." ; }
+while getopts "hq" opt; do
+  case $opt in
+    q) optq=1 ;;
+    h) argerr;;
+    \?) argerr;;
+  esac
+done
+shift "$((OPTIND-1))"  # shift so that $@, $1, etc. refer to the non-option arguments
 
 for fnm in "$@"; do
    do1file "$fnm"
