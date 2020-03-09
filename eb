@@ -20,7 +20,7 @@ excl_nonebook_files() (
    rmdir "$xdnm" || die "$xdnm is not empty!"  # if nothing left, rmdir will succeed
    if [[ "$1" ]]; then
       newnm="$1"
-      find . -type f | while read file; do mv "$file" "$newnm.${file##*.}" ; done   # https://stackoverflow.com/a/8489394
+      find . -type f | while read -r file; do mv "$file" "$newnm.${file##*.}" ; done   # https://stackoverflow.com/a/8489394
    fi
    echo "eb after" ; find . -type f -print | sed 's/^/   /'
    )
