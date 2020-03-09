@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+# purpose: ensure that any dirs named in $homePathsToAdd _that exist_ are in User PATH stored in registry
+#          any missing from User PATH stored in registry are added using Windows-specific SETX command
+
+homePathsToAdd=(  # all elements are considered RELATIVE to $HOME !!!
+   "my/repos/winscripts"
+   "my/repos/shell"
+   "my/repos/k_edit"
+   "my/bin"
+   # "my/bin/Calibre Portable/Calibre"      # only needed for one use, see %~dp0ep function find_ec_binary adequate locally-scoped solution
+   # "AppData/Local/Microsoft/WindowsApps"  # test only (exists in User PATH stored in registry by default)
+   )
+
+regval() ( key="$1" valnm="$2"
+   reg query "$key" //v "$valnm" | perl -lne '/^\s+'"$valnm"'\s+REG\S+\s+(\S.*)$/ && print $1'
+   )
+
+rawUserPath() ( regval "HKCU\Environment" "Path" )
+rawSysPath()  ( regval "HKLM\System\CurrentControlSet\Control\Session Manager\Environment" "Path" )
+
+winPathToLines() ( echo "$1" | perl -lne 'print join("\n", split(";",$_))' )  # convert
+
+userpathbefore="$(rawUserPath)"
+
+if false; then
+   echo "userpathbefore=$userpathbefore"
+   winPathToLines "$userpathbefore"
+
+   echo "system"
+   winPathToLines "$(rawSysPath)"
+fi
+
+winPathsToAdd=""
+for hpath in "${homePathsToAdd[@]}"; do
+   echo "$hpath"
+   if [[ -d "$HOME/$hpath" ]]; then
+      winpath='%USERPROFILE%'"\\$(cygpath -w "$hpath")"
+      echo "$hpath -> $winpath"
+      # repeated calls to winPathToLines is inefficient, but avoids use of a tempfile (and we don't run this script very often...)
+      if winPathToLines "$userpathbefore" | grep -qP '^\Q'"$winpath"'\E$'; then
+         : # echo "skipping $winpath"
+      else
+         winPathsToAdd+=";$winpath"
+      fi
+   fi
+done
+
+echo
+echo "winPathsToAdd=$winPathsToAdd"
+
+if [[ "$winPathsToAdd" ]]; then
+   echo
+   newuserpath="$(echo "$userpathbefore$winPathsToAdd" | perl -pe 's/;+/;/g')"
+   # echo "newuserpath=$newuserpath"
+   echo "setx PATH=$newuserpath"
+   setx "PATH" "$newuserpath"
+fi
