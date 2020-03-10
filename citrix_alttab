@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+# Problem: corporate VDI -> RDP session does not allow mapping Alt+Tab key
+# combo into Remote (RDP server); instead you get switched out of your RDP
+# session into another window on your local PC.  This is a massive
+# productivity killer (for me).
+
+# https://support.citrix.com/article/CTX232298
+#
+# For Windows 64-bit OS, navigate to the key HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Citrix\ICA Client\Engine\Lockdown Profiles\All Regions\Lockdown\Virtual Channels\Keyboard\
+#        Regedit: Computer\HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Citrix\ICA Client\Engine\Lockdown Profiles\All Regions\Lockdown\Virtual Channels\Keyboard
+# In some cases configuring User based Setting also helps:  HKEY_CURRENT_USER\SOFTWARE\Citrix\ICAClient\Engine\Lockdown Profiles\All Regions\Lockdown\Virtual Channels\Keyboard\
+#
+#     Set the below Value.
+#
+# Value Name  TransparentKeyPassthrough
+# Value Type  REG_SZ
+# Value       Remote
+
+hklm_kbd="HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Citrix\\ICA Client\\Engine\\Lockdown Profiles\\All Regions\\Lockdown\\Virtual Channels\\Keyboard\\"
+hkcu_kbd="HKEY_CURRENT_USER\\SOFTWARE\\Citrix\\ICAClient\\Engine\\Lockdown Profiles\\All Regions\\Lockdown\\Virtual Channels\\Keyboard\\"
+# echo "hklm_kbd=$hklm_kbd"
+# echo "hkcu_kbd=$hkcu_kbd"
+kbd_valuenm='TransparentKeyPassthrough'
+kbd_valuetyp='REG_SZ'
+kbd_valuedat='Remote'
+set +x
+
+reg query "$hkcu_kbd" //v "$kbd_valuenm"
+reg query "$hklm_kbd" //v "$kbd_valuenm"
+
+reg add "$hkcu_kbd" //v "$kbd_valuenm" //t "$kbd_valuetyp" //d "$kbd_valuedat"
+reg add "$hklm_kbd" //v "$kbd_valuenm" //t "$kbd_valuetyp" //d "$kbd_valuedat"
