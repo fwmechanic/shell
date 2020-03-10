@@ -2,7 +2,7 @@
 
 ## What
 
-* These scripts are expected to run on both Linux and "git for Windows" (hereinafter: "git bash") bash shell.
+* These scripts are expected to run on both Linux and "git for Windows" (hereinafter: "git bash") bash shells.
 * Bash version 4+ is assumed.
 * The worktree for this repo is expected to be added to PATH.
 
@@ -10,8 +10,7 @@
 
 Dependencies on non-default externalcmds are to be avoided.
 
-Git bash tends to offer a severely restricted default externalcmd environment compared to Linux bash, but
-git bash (and any Linux environment) includes Perl (and `curl`, GNU `grep`, `sed`, `cut` ...) so most beyond-bash custom text processing is done using `perl` one-liners if `grep` is insufficient.
+Git bash tends to offer a severely restricted default externalcmd environment compared to Linux bash, but git bash (and any Linux environment) includes `perl` (and `curl`, GNU `grep`, `sed`, `cut` ...) so most beyond-bash/grep custom text processing is done using `perl` one-liners.
 
 ## Notes
 
