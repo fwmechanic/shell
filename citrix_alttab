@@ -28,6 +28,8 @@ kbd_valuetyp='REG_SZ'
 kbd_valuedat='Remote'
 set +x
 
+# initial condition (if manual restoration/reversal is necessary): both kbd_valuenm existed, but kbd_valuedat was empty string
+
 reg query "$hkcu_kbd" //v "$kbd_valuenm"
 reg query "$hklm_kbd" //v "$kbd_valuenm"
 
