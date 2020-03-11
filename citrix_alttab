@@ -35,3 +35,41 @@ reg query "$hklm_kbd" //v "$kbd_valuenm"
 
 reg add "$hkcu_kbd" //v "$kbd_valuenm" //t "$kbd_valuetyp" //d "$kbd_valuedat"
 reg add "$hklm_kbd" //v "$kbd_valuenm" //t "$kbd_valuetyp" //d "$kbd_valuedat"
+
+# Addendum
+#
+# Citrix Client (a.k.a. "Receiver") hijacks certain key combinations for its
+# (users) use.  In my case, its hijacking of Ctrl+F3 to perform "open task
+# manager" operation was undesirable.
+#
+# Through some research, I was able to determine from
+# https://discussions.citrix.com/topic/382833-configuration-hotkeys-ctrl-f3-does-not-work-with-receiver-4x/
+# that the 'perform "open task manager" operation' is called HotKey9.  Since
+# I have no particular interest in Ctrl+F7, the registry edit recommended in
+# the above-linked article:
+#
+#     Windows Registry Editor Version 5.00
+#
+#     [HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Citrix\ICA Client\Engine\Lockdown Profiles\All Regions\Lockdown\Client Engine\Hot Keys]
+#     "HotKey9Shift"="Ctrl"
+#     "HotKey9Char"="F7"
+#
+# was performed (NB: these values were previously defined to the value ""
+# (empty string)), followed by a reboot.  Thereafter, I was able to access my
+# application's Ctrl+F3-bound functionality using that key combo, and use
+# Ctrl+F7 to open Task Manager...
+#
+# NB: advice to edit %USERPROFILE%\AppData\Roaming\ICAClient\APPSRV.INI
+# similarly (giving value "none" to both HotKey9Char and HotKey9Shift
+#
+#   Hotkey9Char=none
+#   Hotkey9Shift=none
+#
+# and rebooting) was unsuccessful.  This file already contained mappings:
+#
+#   Hotkey12Char=none
+#   Hotkey12Shift=none
+#   Hotkey13Char=none
+#   Hotkey13Shift=none
+#
+# so assigning value "none" to disable seems to be the correct syntax...
