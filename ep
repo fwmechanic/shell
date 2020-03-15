@@ -27,32 +27,32 @@ convert_to_pdf() (
    # https://manual.calibre-ebook.com/generated/en/ebook-convert.html#pdf-output-options
    mpts="3" mpo='--pdf-page-margin-'
    set -x  # show actual cmdline
+   "$ecbin" --version
    "$ecbin" "$1" "$2" --output-profile=ipad --use-profile-size "${mpo}bottom=$mpts" "${mpo}left=$mpts" "${mpo}right=$mpts" "${mpo}top=$mpts"
    )
 
-do1file() (
-   fnm="$1"
+do1file() {
+   local fnm="$1"
    if [[ ! -f "$fnm" ]]; then
       ((optq!=0)) || echo "$fnm does not name a file"
       return
    fi
-   ext="${fnm##*.}"
+   local ext="${fnm##*.}"
    if [[ "$ext" && "${ext^^}" == "PDF" ]]; then  # don't try to convert a PDF to PDF
       ((optq!=0)) || echo "skipping: src is $ext '$fnm'"
    else
-      if [[ $fnm != */* ]]; then
-         fpath=""
-      else
-         fpath="${fnm%/*}/"
-      fi                                  # ; echo "fpath=$fpath'"
-      sanspath="${fnm##*/}"               # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
-      sansext="${sanspath%.*}"            # ; echo "sansext=$sansext'"
-      srcfnm="$fnm"                       # ; echo "srcfnm=$srcfnm'"
-      tgtfnm="$fpath$sansext.medtype.pdf" # ; echo "tgtfnm=$tgtfnm'"
+      local fpath=""
+      if [[ $fnm == */* ]]; then
+         local fpath="${fnm%/*}/"
+      fi                                        # ; echo "fpath=$fpath'"
+      local sanspath="${fnm##*/}"               # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+      local sansext="${sanspath%.*}"            # ; echo "sansext=$sansext'"
+      local srcfnm="$fnm"                       # ; echo "srcfnm=$srcfnm'"
+      local tgtfnm="$fpath$sansext.medtype.pdf" # ; echo "tgtfnm=$tgtfnm'"
       if [[ -f "$tgtfnm" && "$tgtfnm" -nt "$srcfnm" ]]; then
          ((optq!=0)) || echo "skipping: tgtfnm exists '$tgtfnm'"
       else
-         logfnm="$fpath$sansext.log"      # ; echo "logfnm=$logfnm'"
+         local logfnm="$fpath$sansext.log"      # ; echo "logfnm=$logfnm'"
          if [[ -f "$logfnm" && "$logfnm" -nt "$srcfnm" ]]; then
             ((optq!=0)) || echo "skipping: logfile exists '$tgtfnm'"
          else
@@ -66,7 +66,7 @@ do1file() (
          fi
       fi
    fi
-   )
+   }
 
 # parse options
 argerr() {  die "usage: $0 [-q] FILE..." ; }
