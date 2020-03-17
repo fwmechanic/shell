@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+# keep in sync with %~dp0../winscripts/tagr.bat !!!
+# eXclude .gitignored files per https://github.com/universal-ctags/ctags/issues/218#issuecomment-377717588
+
+rg --files | ctags --totals=yes --tag-relative=yes --excmd=number --fields=+K+z+S+l+n --extras=+f "$@" -R --links=no -L -
