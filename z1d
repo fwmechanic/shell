@@ -17,26 +17,39 @@
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 
-[[ "$1" ]] || die "missing dirname param"
-[[ -d "$1" ]] || die "$1 is not a dir"
-echo "base=$1'"
-notrs="${1%/}"
-echo "notrs=$notrs'"
-vfnm="SHA1SUMS"
-if [[ ! -f "$1/$vfnm" ]]; then
-   echo "generating $vfnm" ; ( cd "$1" && sha1sum -- * > "$vfnm" )         || die "$vfnm generation FAILED"
-   echo "verifying $vfnm"  ; ( cd "$1" && sha1sum -c  "$vfnm" >/dev/null ) || die "$vfnm self-verification FAILED"
-fi
+do1file() (
+   if [[ ! -d "$1" ]]; then
+      echo "$1 is not a dir, skipping"
+      return
+   fi
+   if [[ "$1" == z1d_* ]]; then
+      echo "$1 is a z1d_* dir, skipping"
+      return
+   fi
+   echo "base=$1'"
+   notrs="${1%/}"
+   echo "notrs=$notrs'"
+   vfnm="SHA1SUMS"
+   if [[ ! -f "$1/$vfnm" ]]; then
+      echo "generating $vfnm" ; ( cd "$1" && sha1sum -- * > "$vfnm" )         || die "$vfnm generation FAILED"
+    # echo "verifying $vfnm"  ; ( cd "$1" && sha1sum -c  "$vfnm" >/dev/null ) || die "$vfnm self-verification FAILED"
+   fi
 
-{ set -x 2> /dev/null ; }
+   { set -x 2> /dev/null ; }
 
-# ****
-# **** DO NOT USE INFO-ZIP zip (2.32 or older): it fails to read/include files/dirs containing '[' or ']' characters
-# ****
-# ****    from 2004 https://groups.google.com/forum/#!topic/alt.msdos.batch.nt/8-rYNhMtsw4
-# ****
-# zip -v -0 -r "${notrs}.zip" "$notrs" || die "zip failed"   # https://stackoverflow.com/questions/1848415/remove-slash-from-the-end-of-a-variable
+   # ****
+   # **** DO NOT USE INFO-ZIP zip (2.32 or older): it fails to read/include files/dirs containing '[' or ']' characters
+   # ****
+   # ****    from 2004 https://groups.google.com/forum/#!topic/alt.msdos.batch.nt/8-rYNhMtsw4
+   # ****
+   # zip -v -0 -r "${notrs}.zip" "$notrs" || die "zip failed"   # https://stackoverflow.com/questions/1848415/remove-slash-from-the-end-of-a-variable
 
-# 7z (18.05) can create zip files, and is MAINTAINED(!)
-7z a -tzip -mx0 "${notrs}.zip" "$notrs" || die "7z failed"
-mv "$1" z1d_"$1"
+   # 7z (18.05) can create zip files, and is MAINTAINED(!)
+   7z a -tzip -mx0 "${notrs}.zip" "$notrs" || die "7z failed"
+   mv "$1" z1d_"$1"
+   )
+
+[[ "$1" ]] || die "missing dirname param(s)"
+for dnm in "$@"; do
+   do1file "$dnm"
+done
