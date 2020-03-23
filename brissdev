@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+java11 -jar "$(cygpath -w "$HOME/my/repos/briss2/target/briss-1.0-rc.2.jar")" "$(cygpath -w "$1")"

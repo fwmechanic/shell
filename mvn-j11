@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+. jdk11vars
+JAVA_HOME="$jdkhome" PATH="$JAVA_HOME/bin:$PATH" "$java_tools_root/apache-maven/bin/mvn" "$@"

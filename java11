@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+. jdk11vars
+"$jdkhome/bin/java" "$@"
