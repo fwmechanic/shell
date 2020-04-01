@@ -1,0 +1,107 @@
+#!/usr/bin/env perl
+
+#
+# stupid little script that writes album.m3u, which (at least Zinf mp3 player)
+# interprets as a playlist.
+#
+# File format, "Basic M3U", is absurdly simple, but it works, so who's
+# complaining?  (extended/expanded M3U formats offer nothing I need)
+#
+# 20060508 klg wrote
+#
+# Well, one thing I need is a RECURSIVE version, maybe on that generates a
+# randomized list.  Why?  Well, because I have a tree "Kevins_Singles" which
+# contains, more or less, one file per directory, and I'd like to "queue up" all
+# of the files (in random order).  So, each time I want to listen to these songs,
+# I'd run 'm3u -r' in the root dir of this tree, then invoke the player on the
+# generated m3u file.  Sounds like a job for File::Find (UPDT: glob can now
+# handle recursive searches!!!?).
+#
+# 20071204 kgoodwin added -r option to do this
+#
+# glob is NOT the way to go!  It only APPEARS to handle recursive searches.
+# Now/again using File::Find.
+#
+# Now takes cmdline args, generally expected to be dir names (supplied via Total
+# Commander selection via %S) whose contents are to be incorporated into a
+# playlist.
+#
+# 20071205 kgoodwin
+#
+# generate m3u files in each directory either containing, or containing
+# directories which contain (directories which contain ...) >1 playable files.
+#
+# 20170118 kgoodwin
+#
+use strict;
+use warnings;
+use English;
+use File::Find;
+use Cwd;
+
+use Getopt::Std;
+our ($opt_n,$opt_r,$opt_s);
+getopts( "n:rs" );
+
+my $startDir = cwd(); # print "startDir=$startDir\n";
+my @playablefiles;
+my $m3u_filename = $opt_n || ($opt_r or scalar @ARGV) && "playlist.m3u" || "00.m3u";
+
+# { local $LIST_SEPARATOR = "\n"; print "\@ARGV=@ARGV\n"; }
+
+my @args = @ARGV;
+   @args = ($startDir) unless @args;
+
+my %eachdir;
+sub eachFile { # even if this appears nasty, GLOB is NOT a better alternative!
+   my $thisDir = $File::Find::dir;
+   ++$eachdir{$thisDir}; # we will generate a
+   my $file = $File::Find::name;
+   if( $file =~ m!\.(?:mp[34g]|m4a|wmv|flac|f[l4]v)$!i ) { # print "F1=$file\n";
+      push( @playablefiles, $file );
+      }
+   }
+
+for my $arg ( @args ) {
+   # print "arg=$arg\n";
+   if(    -f $arg )  { push( @playablefiles, $arg ); }
+   elsif( -d $arg )  { # print "a=$arg\n";
+                       find( \&eachFile, $arg."\\" );
+                     }
+   else              { push( @playablefiles, glob( $arg ) ); }
+   }
+if( 0 == scalar keys %eachdir ) {
+   ++$eachdir{$startDir}
+   }
+
+if( $opt_s ) {
+   use List::Util 'shuffle';
+   @playablefiles = shuffle(@playablefiles);
+   }
+else {
+   @playablefiles = sort @playablefiles;
+   }
+
+sub wr_array { my ($ofnm,$aref) = @_;
+   print "writing $ofnm\n";
+   open my $ofh, ">", $ofnm or die "can't open $ofnm for writing: $!\n";
+   local $LIST_SEPARATOR = "\n";
+   print $ofh "@$aref";
+   }
+
+sub write_m3u { my ($destdir,$aref) = @_;
+   my @results;
+   for my $fnm ( @$aref ) {
+      if( my ($fnm_rel) = $fnm =~ m|^\Q$destdir\E[\\/](.+)$| ) { # print "F1=$fnm_rel\n";
+         $fnm_rel =~ s!/+!\\!g;  # print "F2=$fnm_rel\n";
+         $fnm_rel =~ s!\\+!\\!g; # print "F3=$fnm_rel\n";
+         $fnm_rel =~ s!^\.\\!!;  # print "F4=$fnm_rel\n";
+         push @results, $fnm_rel;
+         }
+      }
+   wr_array( "$destdir/$m3u_filename", \@results ) if @results > 1;
+   }
+
+write_m3u( $_, \@playablefiles ) for ( sort keys %eachdir );
+
+exit( scalar @playablefiles > 0 ? 0 : 1 );
