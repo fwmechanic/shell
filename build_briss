@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+set -ex
+cd $HOME/my/repos
+[[ -d "jpedal" ]] || git clone -b jdk11_build git@github.com:fwmechanic/JPedal.git
+[[ -d "briss2" ]] || git clone git@github.com:fwmechanic/briss2.git
+( cd jpedal && mvn-j11 install )
+( cd briss2 && mvn-j11 package )

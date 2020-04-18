@@ -1,3 +1,7 @@
 #!/usr/bin/env bash
 
+# to build Briss
+# git clone git@github.com:fwmechanic/jpedal.git
+# git clone git@github.com:fwmechanic/briss2.git
+
 java11 -jar "$(cygpath -w "$HOME/my/repos/briss2/target/briss-1.0-rc.2.jar")" "$(cygpath -w "$1")"
