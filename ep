@@ -13,7 +13,7 @@ find_ec_binary() (
 
    declare -a calibre_locns=( "$HOME/my/bin"  "$LOCALAPPDATA/Programs" )
    for dnm in "${calibre_locns[@]}"; do
-      ecexe="$dnm/Calibre Portable/Calibre/$ecxbnm.exe"
+      ecexe="$(cygpath -u "$dnm/Calibre Portable/Calibre/$ecxbnm.exe")"
       if [[ -x "$ecexe" ]]; then
          echo "$ecexe"
          return 0
@@ -22,11 +22,15 @@ find_ec_binary() (
    die "$ecxbnm is not in PATH or ${calibre_locns[*]}"
    )
 ecbin="$(find_ec_binary)"
+# echo "ecbin=$ecbin"
+ecbin_version_2line="$("$ecbin" --version)" ; read -r ecbin_version <<<$ecbin_version_2line
+[[ "$ecbin_version" ]] || die
+echo "ecbin_version=$ecbin_version"
 
 convert_to_pdf() (
    # https://manual.calibre-ebook.com/generated/en/ebook-convert.html#pdf-output-options
    mpts="3" mpo='--pdf-page-margin-'
-   "$ecbin" --version
+   echo "$ecbin_version"
    set -x  # show actual cmdline
    "$ecbin" "$1" "$2" --output-profile=ipad --use-profile-size "${mpo}bottom=$mpts" "${mpo}left=$mpts" "${mpo}right=$mpts" "${mpo}top=$mpts"
    )
@@ -53,6 +57,13 @@ do1file() {
          ((optq!=0)) || echo "skipping: tgtfnm exists '$tgtfnm'"
       else
          local logfnm="$fpath$sansext.log"      # ; echo "logfnm=$logfnm'"
+         if [[ -f "$logfnm"  ]]; then
+            read -r logver < "$logfnm"
+            if [[ "$logver" != "$ecbin_version" ]]; then
+               ((optq!=0)) || echo "logver != ecbin_version: $logver != $ecbin_version"
+               rm -f "$logfnm"
+            fi
+         fi
          if [[ -f "$logfnm" && "$logfnm" -nt "$srcfnm" ]]; then
             ((optq!=0)) || echo "skipping: logfile exists '$tgtfnm'"
          else
