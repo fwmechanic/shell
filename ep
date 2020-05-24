@@ -47,7 +47,7 @@ do1file() {
    else
       local fpath=""
       if [[ $fnm == */* ]]; then
-         local fpath="${fnm%/*}/"
+         fpath="${fnm%/*}/"
       fi                                        # ; echo "fpath=$fpath'"
       local sanspath="${fnm##*/}"               # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
       local sansext="${sanspath%.*}"            # ; echo "sansext=$sansext'"
@@ -58,7 +58,7 @@ do1file() {
       else
          local logfnm="$fpath$sansext.log"      # ; echo "logfnm=$logfnm'"
          if [[ -f "$logfnm"  ]]; then
-            read -r logver < "$logfnm"
+            local logver ; read -r logver < "$logfnm"
             if [[ "$logver" != "$ecbin_version" ]]; then
                ((optq!=0)) || echo "logver != ecbin_version: $logver != $ecbin_version"
                rm -f "$logfnm"
