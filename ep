@@ -6,8 +6,8 @@ optq=0
 
 find_ec_binary() (
    ecxbnm="ebook-convert"
-   if command -v "$ecxbnm"; then
-      echo "$ecxbnm"
+   if inpath="$(command -v "$ecxbnm")"; then
+      echo "$inpath"
       return 0
    fi
 
