@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# problem: my recorders often produce audio streams with volume level far lower than ideal
+# ffmpeg (and bash and perl) to the rescue!  Catalyst https://superuser.com/questions/323119/how-can-i-normalize-audio-using-ffmpeg
+
+read_mean_volume_neg_db() (
+   ffmpeg -i "$1" -vn -sn -dn -af "volumedetect" -f null /dev/null 2>&1 >/dev/null | perl -lne '/mean_volume: \-(\d+)\.\d+ dB/ && print $1'
+   )
+
+outfnm_suffix="_normvol.mp3"
+
+normvol_to_mp3() (
+   outfnm="${1%.*}$outfnm_suffix"
+   if [[ -f "$outfnm" && "$outfnm" -nt "$1" ]]; then
+      echo "exists $outfnm"
+   else
+      if ! dbadj="$(read_mean_volume_neg_db "$1")"; then
+         echo "read_mean_volume_neg_db failed on $1"
+      else
+         ffmpeg -i "$1" -y -f mp3 -q:a 0 -af "volume=${dbadj}dB" "$outfnm" 2> /dev/null || die "normvol failed on $1"
+         printf "+%3d dB %s\n" "$dbadj" "$outfnm"
+      fi
+   fi
+   )
+
+for fnm in "$@"; do
+   case "$fnm" in
+      *"$outfnm_suffix") echo "!recnv $fnm" ;;
+      *)                 normvol_to_mp3 "$fnm" ;;
+   esac
+done
