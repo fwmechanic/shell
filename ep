@@ -23,7 +23,7 @@ find_ec_binary() (
    )
 ecbin="$(find_ec_binary)"
 # echo "ecbin=$ecbin"
-ecbin_version_2line="$("$ecbin" --version)" ; read -r ecbin_version <<<$ecbin_version_2line
+ecbin_version_2line="$("$ecbin" --version)" ; read -r ecbin_version <<<"$ecbin_version_2line"
 [[ "$ecbin_version" ]] || die
 echo "ecbin_version=$ecbin_version"
 
