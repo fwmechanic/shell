@@ -5,10 +5,14 @@ die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 
 # stupid little script to
 
-fetchremote="$(git remote -v | grep -F 'github.com' | head -n1 | cut -f2)"      ; echo "fetchremote=$fetchremote"
+if [[ "$1" ]]; then
+   cd "$1" || die "could not cd to $1"
+fi
+
+fetchremote="$(git remote -v 2> /dev/null | grep -F 'github.com' | head -n1 | cut -f2)"      # echo "fetchremote=$fetchremote"
 if [[ -z "$fetchremote" ]]; then
    echo "no entries matching 'github.com' in git remote -v output:"
-   git remote -v | sed 's/^/   /'
+   git remote -v |& sed 's/^/   /'
    die
 fi
 fetchremote="${fetchremote/ (fetch)/}"
