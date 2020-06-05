@@ -14,7 +14,9 @@ die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 [[ "$2" ]] || die "missing mm:ss param"
 [[ -f "$1" ]] || die "$1 is not a file"
 
+ext="${1##*.}"  # ffmpeg behavior DEPENDS ON the DEST FILE EXTENSION you provide, so derive from input fnm
+
 { set -x 2> /dev/null ; }
 
 # NB: ffmpeg argments are ORDER SENSITIVE!!!  http://www.markbuckler.com/post/cutting-ffmpeg/  (see "All-Frame Seeking")
-ffmpeg -hide_banner -y -i "$1" -c copy -to "$2" out.mp4
+ffmpeg -hide_banner -y -i "$1" -c copy -to "$2" "out.$ext"

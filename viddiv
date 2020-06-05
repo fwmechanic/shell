@@ -12,7 +12,8 @@ ifnm="$1" ; shift ;  [[    "$ifnm" ]] || die "parameters: fnm t0 t1"
 t0="$1"   ; shift ;  [[    "$t0"   ]] || die "parameters: fnm t0 t1"
 t1="$1"   ; shift ;  [[    "$t1"   ]] || die "parameters: fnm t0 t1"
                      [[ -f "$ifnm" ]] || die "$ifnm is not a file"
-dfltofnm="out.mp4"
+ext="${ifnm##*.}"  # ffmpeg behavior DEPENDS ON the DEST FILE EXTENSION you provide, so derive from input fnm
+dfltofnm="out.$ext"
 { set -x 2> /dev/null ; }
-vidsfxrmv "$ifnm" "$t0" || die ; mv "$dfltofnm" out0.mp4
-vidpfxrmv "$ifnm" "$t1" || die ; mv "$dfltofnm" out1.mp4
+vidsfxrmv "$ifnm" "$t0" || die ; mv "$dfltofnm" "out0.$ext"
+vidpfxrmv "$ifnm" "$t1" || die ; mv "$dfltofnm" "out1.$ext"
