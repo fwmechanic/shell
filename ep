@@ -25,7 +25,7 @@ ecbin="$(find_ec_binary)"
 # echo "ecbin=$ecbin"
 ecbin_version_2line="$("$ecbin" --version)" ; read -r ecbin_version <<<"$ecbin_version_2line"
 [[ "$ecbin_version" ]] || die
-echo "ecbin_version=$ecbin_version"
+# echo "ecbin_version=$ecbin_version"
 
 convert_to_pdf() (
    # https://manual.calibre-ebook.com/generated/en/ebook-convert.html#pdf-output-options
