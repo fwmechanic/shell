@@ -48,4 +48,4 @@ for url in "$@"; do
 
 done
 
-cmd //c e2pm.bat "$oofnm"
+ep "$oofnm"
