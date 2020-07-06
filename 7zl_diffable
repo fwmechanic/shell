@@ -1,0 +1,39 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+use English;
+use Data::Dumper;
+
+# NB!!!! when using git-bash-perl (by definition ON WINDOWS), "paragraph mode" will BREAK to the extent STDIN contains DOS newlines!!!
+
+# first read the whole fscking file into a variable
+my $text;
+{ # https://www.perlmonks.org/?node_id=1952
+  local $/ = undef;
+  $text = <>;
+}
+$text =~ tr /\r//d;  # dos2unix
+
+# now read from the string (as a filehandle) in "paragraph mode"  https://stackoverflow.com/a/12562193
+{
+local $/ = "";
+open my $ifh, '<', \$text;
+my @out;
+while ( <$ifh> ) { chomp;
+   # print ((split /\n/, $_)[0]);
+
+   # print( "\$_: ", $_, "\n" );
+   my @fields = split "\n";
+   @fields = grep { m! = \S! } @fields;
+   # print( "\@fields: ", Dumper( \@fields ), "\n" );
+   my %ff = map { split qr(\s*=\s*) } @fields;
+   # print( "\%ff: ", Dumper( \%ff ), "\n" );
+   # print "\n";
+   push @out, join( "\t", lc $ff{Path} # , ($ff{Modified} // '?')
+            , ($ff{Size} // '?') , ($ff{CRC} // '?') );
+   # print $ff{Path}, " ", $ff{Modified} // '?', " ", $ff{Size} // '?', " ", $ff{CRC} // '?', "\n" if exists $ff{Path};
+   }
+@out = sort @out;
+print "$_\n" for @out;
+}

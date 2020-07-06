@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+zip7stat() { 7z l -ba -slt "$1" ; }
+epub_mask() { perl -pe 's!(?:OPS|OEBPS)([\\/])!EPUB$1!g' ; }  # tr "[:upper:]" "[:lower:]" |
+epub_ls_diffable() { zip7stat "$1" | epub_mask | 7zl_diffable > "$1.z7stat" ; }
+
+epub_ls_diffable "$1"
+epub_ls_diffable "$2"
+diff -u0 "$1.z7stat" "$2.z7stat"
+rm -f "$1.z7stat" "$2.z7stat"
