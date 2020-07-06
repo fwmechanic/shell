@@ -16,7 +16,7 @@ excl_nonebook_files() (
    rm -rf "$xdnm:?"/*   # in case dir already existed, nuke its content
    # rmv typical "advertising" files embedded in www downloads; extensions that never contain content we want to keep
    find . -type f \( -iname "*.txt" -or -iname "*.html" -or -iname "*.jpg"  -or -iname "*.jpeg" -or -iname "*.png" -or -iname "*.opf" \) -delete
-   find . -type f ! \( -iname "*.epub" -or -iname "*.azw3" -or -iname "*.mobi" -or -iname "*.pdf" -or -iname "*.zip" \) -exec mv {} "$xdnm/" \;  # *.zip: "accompanying code" files
+   find . -type f ! \( -iname "*.epub" -or -iname "*.azw[34]" -or -iname "*.mobi" -or -iname "*.pdf" -or -iname "*.zip" \) -exec mv {} "$xdnm/" \;  # *.zip: "accompanying code" files
    rmdir "$xdnm" || die "$xdnm is not empty!"  # if nothing left, rmdir will succeed
    if [[ "$1" ]]; then
       newnm="$1"
