@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-ep ./*.azw[34]
-ep ./*.mobi
 ep ./*.epub
+ep ./*.mobi
+ep ./*.azw[34]
 ep ./*.chm
