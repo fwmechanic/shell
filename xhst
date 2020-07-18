@@ -17,7 +17,16 @@
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 
 [[ "$1" ]] || die "missing URL param(s)"
+
+dlcache="./.dlcache"   ; mkdir -p "$dlcache"
+gencache="./.gencache" ; mkdir -p "$gencache"
+
 oofnm="${1##*/}.html"  # bash-intrinsic version of basename  https://stackoverflow.com/a/965072
+
+genohfnm="$gencache/$oofnm"
+
+[[ -f "$genohfnm" ]] && die "$genohfnm exists: delete to rebuild"
+
 # in order for "$oofnm" to be nicely converted by calibre (e2pm), need to prefix this _rudimentary_ header:
 cat <<'HEREDOC' > "$oofnm"
 <!DOCTYPE html>
@@ -38,14 +47,17 @@ HEREDOC
 for url in "$@"; do
 
    fnm="${url##*/}"  # bash-intrinsic version of basename  https://stackoverflow.com/a/965072
-   rm -f "$fnm"
-   curl -sSO "$url" || die
-   echo "curl OK $fnm"
-   [[ -f "$fnm" ]] || die "curl OK but no file $fnm"
+   dlcachefnm="$dlcache/$fnm"
+   if [[ -f "$dlcachefnm" ]]; then
+      echo "dlcache hit @ $dlcachefnm"
+   else
+      ( cd "$dlcache" && curl -sSO "$url" ) || die "curl failed"
+      [[ -f "$dlcachefnm" ]] || die "curl OK but no file $dlcachefnm"
+      echo "curl OK $dlcachefnm"
+   fi
 
-   tidy -q -numeric -asxhtml --show-warnings no "$fnm" | xml sel -t -c "$item_xpath_story" -c "$item_xpath_post_" >> "$oofnm"
-   rm -f "$fnm"
+   tidy -q -numeric -asxhtml --show-warnings no "$dlcachefnm" | xml sel -t -c "$item_xpath_story" -c "$item_xpath_post_" >> "$oofnm"
 
 done
 
-ep "$oofnm"
+ep "$oofnm" && mv "$oofnm" "$genohfnm"
