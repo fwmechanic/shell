@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 
 optq=0
 
@@ -27,12 +28,12 @@ ecbin_version_2line="$("$ecbin" --version)" ; read -r ecbin_version <<<"$ecbin_v
 [[ "$ecbin_version" ]] || die
 # echo "ecbin_version=$ecbin_version"
 
+
 convert_to_pdf() (
    # https://manual.calibre-ebook.com/generated/en/ebook-convert.html#pdf-output-options
    mpts="3" mpo='--pdf-page-margin-'
    echo "$ecbin_version"
-   set -x  # show actual cmdline
-   "$ecbin" "$1" "$2" --output-profile=ipad --use-profile-size "${mpo}bottom=$mpts" "${mpo}left=$mpts" "${mpo}right=$mpts" "${mpo}top=$mpts"
+   see "$ecbin" "$1" "$2" --output-profile=ipad --use-profile-size "${mpo}bottom=$mpts" "${mpo}left=$mpts" "${mpo}right=$mpts" "${mpo}top=$mpts"
    )
 
 do1file() {
