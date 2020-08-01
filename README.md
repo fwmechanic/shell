@@ -47,3 +47,20 @@ Included in git bash:
 
 ## Notes
 * using `set -x` as the next-to-last-command of a subshell allows one the display the exact command line executed to accomplish a critical operation, without needing to code any extra (or duplicate) lines of code for logging such info.  An improved vehicle for this concept is the `see` function now found alongside its buddy `die`.
+
+## Note: using bash on hybrid Linux/Windows Jenkins cluster
+
+Goal
+
+* on Jenkins agents running on Linux hosts, and
+* on Jenkins agents running on Windows hosts
+* be able to run bash scripts stored in Jenkins Freestyle Job **Execute Shell** code blocks
+
+How
+
+* **caveat**: Freestyle Jobs following this note can run on _either_ Linux or Windows Jenkins hosts, _but not both_.
+* on Jenkins Master, under **Manage Jenkins** / **Configure System** set **Shell Executable** to `c:\Program Files\Git\bin\bash.exe`
+* in Jenkins Freestyle Job **Execute Shell** code blocks...
+   * intended to run on Windows hosts, **provide NO shebang line**.
+   * intended to run on Linux hosts, **provide shebang line `#!/usr/bin/bash`**.
+      * Note: similarly, with Jenkins Master configured as above, Jenkins Groovy Pipeline `sh` function `script` parameter (containing shell script text) should (to execute on Linux) be given an initial line containing `#!/usr/bin/bash` or `#!/usr/bin/env bash`
