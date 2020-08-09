@@ -1,0 +1,90 @@
+#!/usr/bin/perl -w
+# Usage: ./dgrep re
+
+use strict;
+use warnings;
+use English;
+use Getopt::Std;
+use File::Find;
+
+my $kdb_dnm = "$ENV{HOME}/my/repos/pers";
+
+our ($opt_a,$opt_c,$opt_d,$opt_f);
+getopts('acdf:');  # -a is boolean flag, -f takes an argument
+                 # Sets $opt_* as a side effect.
+
+# stolen from my https://github.com/fwmechanic/file-collection-searcher/blob/master/search-files
+sub gen_re_match_all_anyorder {
+   my ($bound_re_before,$bound_re_after) = ( '(?:^|[\W_])', '(?:$|[\W_])' ); # can't use \b because $qm may not consist of word chars only
+   my $bound_re = '(?:\b|[_])';
+   my @reraw;
+   for (@_) {  # construct regex matching lines containing, in any order, ALL of @_
+      my $qm = quotemeta( $_ );            #  match fragment
+      $qm = "$bound_re_before$qm$bound_re_after" if ($qm =~ m=[A-Z]=) && ! ($qm =~ m=[a-z]=); # all caps? match word
+      push @reraw, "(?=.*$qm)"; # https://stackoverflow.com/questions/4389644/regex-to-match-string-containing-two-names-in-any-order
+      }
+   my $rv = '^(?i)' . join('',@reraw) . '.*$'; # print "\npat=$rv\n";
+   return $rv;
+   }
+
+sub all_files {
+   my @found;
+   my $wanted = sub {
+      return unless -f;
+      return unless $File::Find::name =~ m|\.kdb$|i;
+      push @found, $File::Find::name;
+      };
+   find( $wanted, $kdb_dnm );
+   return sort @found;
+   }
+
+my @files;
+
+if( $opt_a ) {     @files = all_files();  }
+elsif( $opt_f ) {  @files = ( "$kdb_dnm/$opt_f" ); }
+else {             @files = ( "$kdb_dnm/daily_notes.kdb" ); }
+
+my $rex = gen_re_match_all_anyorder( @ARGV );
+
+my $dtag = '';
+my @dtxt;
+my $dmatch;
+my ($chkCtxtHit,$chkLnHit);
+if( $opt_c ) {
+   $chkCtxtHit = sub {
+      my $all = join ' ', @dtxt;
+      # print "ALL: " . $all, "\n";
+      if( $all =~ m|$rex|o ) {
+         if( $opt_d ) {  print $dtag,                           "\n"; }
+         else {          print $dtag, ' ', join( "\n", @dtxt ), "\n"; }
+         }
+      }
+   }
+else {
+   $chkLnHit = sub {
+      if( m|$rex|o ) {
+         s/^\s+|\s+$//g;
+         print "$dtag:$_\n";  # $fnm:$.:
+         }
+      }
+   }
+for my $fnm ( @files ) {
+   open my $ifh, '<', $fnm or die "abend cannot open $fnm for reading: $!\n";
+   while (<$ifh>) {
+      chomp;
+      my ($dt) = m|^(\d{8}(_\d{4,6})?)|;  # 20200803_1001
+      if( $dt ) {
+         $chkCtxtHit->() if $chkCtxtHit;
+         $dtag = substr $dt, 0, 8;
+         # print $dtag . "\n";
+         $_ = substr $_, length($dt);
+         @dtxt = ( $_ );
+         }
+      else {
+         push( @dtxt, $_ );
+         }
+      $chkLnHit->( $_ ) if $chkLnHit;
+      }
+   $chkCtxtHit->() if $chkCtxtHit;
+   close $ifh;
+   }
