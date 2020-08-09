@@ -8,7 +8,6 @@ mkdir_or_die() {  # if already exists, do nothing (existing contents not disturb
    [[ -d "$1" ]] ||               die "mkdir $1 failed"
    }
 zfdin="./_consumed" ; mkdir_or_die "$zfdin"   # when making a bulk run, it's handy to be able to verify outcome by comparing the # of
-zfdout="./_output"  ; mkdir_or_die "$zfdout"  # in vs out files (empty before starting! TODO: add a common date-code prefix to $zfdin & $zfdout)
 
 excl_nonebook_files() (
    echo "eb before" ; find . -type f -print | sed 's/^/   /'
@@ -17,13 +16,12 @@ excl_nonebook_files() (
    rm -rf "$xdnm:?"/*   # in case dir already existed, nuke its content
    # rmv typical "advertising" files embedded in www downloads; extensions that never contain content we want to keep
    find . -type f \( -iname "*.txt" -or -iname "*.html" -or -iname "*.jpg"  -or -iname "*.jpeg" -or -iname "*.png" -or -iname "*.opf" \) -delete
-   find . -type f ! \( -iname "*.epub" -or -iname "*.azw[34]" -or -iname "*.mobi" -or -iname "*.pdf" -or -iname "*.zip" \) -exec mv {} "$xdnm/" \;  # *.zip: "accompanying code" files
+   find . -type f ! \( -iname "*.epub" -or -iname "*.azw" -or -iname "*.azw[34]" -or -iname "*.mobi" -or -iname "*.pdf" -or -iname "*.zip" \) -exec mv {} "$xdnm/" \;  # *.zip: "accompanying code" files
    rmdir "$xdnm" || die "$xdnm is not empty!"  # if nothing left, rmdir will succeed
    if [[ "$1" ]]; then
       newnm="$1"
       find . -type f | while read -r file; do mv "$file" "$newnm.${file##*.}" ; done   # https://stackoverflow.com/a/8489394
    fi
-   echo "eb after" ; find . -type f -print | sed 's/^/   /'
    )
 
 do1file() (
@@ -39,10 +37,8 @@ do1file() (
 
    # purpose: given a typical ebook archive file (zip, rar) extracted into $sansext, delete non-ebook files and rename ebook files $sansext.ext
 
-   (cd "$sansext" && excl_nonebook_files "$sansext") || die "excl_nonebook_files failed"
+   (cd "$sansext" && excl_nonebook_files "../$sansext") || die "excl_nonebook_files failed"
    mv "$1" "$zfdin/" || die "mv $1 $zfdin/ FAILED" # move input file (which might be a zip file) into "done" dir
-   # set -x
-   mv "$sansext/"* "$zfdout/" || die "'mv $sansext/* $zfdout/' FAILED"
    rmdir "$sansext" || die "mv did not empty $sansext/"
 
    echo "------------------------------- eb successful -------------------------------"
