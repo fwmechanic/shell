@@ -34,7 +34,7 @@ cat <<'HEREDOC' > "$oofnm"
 <head>
 HEREDOC
 
-   # `./xml el -v tidied-html-file` yields a list of the xpaths of all entities (_plus_ their
+   # `xml el -v tidied-html-file`   yields a list of the xpaths of all entities (_plus_ their
    #                                attributes and values) in tidied-html-file.
    #                                This list provides the basis for `xml sel -c/-v [param values]`
    # xpath_story_item was plucked directly from `xml el -v tidied-html-file` output:
