@@ -5,13 +5,35 @@ use strict;
 use warnings;
 use English;
 use Getopt::Std;
+use File::Basename;
 use File::Find;
 
 my $kdb_dnm = "$ENV{HOME}/my/repos/pers";
 
+my($scriptname, $scriptdirs, $scriptsuffix) = fileparse($0);
+
+sub die_w_usage {
+   print STDERR <<"EOT";
+$scriptname: diary-grep
+usage: $scriptname [-a] [-c] [-d] [-f kdbfile] term [term [ ... ]]
+  -a   search all kdb files
+  -c   entry search (entry=text betw date markers)
+  -d   display date only
+  -f kdbfile  search only kdbfile
+EOT
+   die "abend\n"
+   }
+
 our ($opt_a,$opt_c,$opt_d,$opt_f);
 getopts('acdf:');  # -a is boolean flag, -f takes an argument
                  # Sets $opt_* as a side effect.
+
+scalar @ARGV > 0 || die_w_usage;
+
+if( scalar @ARGV == 1 && $opt_d ) {
+   $opt_c = undef;
+   $opt_d = undef;
+   }
 
 # stolen from my https://github.com/fwmechanic/file-collection-searcher/blob/master/search-files
 sub gen_re_match_all_anyorder {
@@ -55,6 +77,7 @@ if( $opt_c ) {
       my $all = join ' ', @dtxt;
       # print "ALL: " . $all, "\n";
       if( $all =~ m|$rex|o ) {
+         $all =~ s/\W//g;
          if( $opt_d ) {  print $dtag,                           "\n"; }
          else {          print $dtag, ' ', join( "\n", @dtxt ), "\n"; }
          }
