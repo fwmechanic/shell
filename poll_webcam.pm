@@ -9,7 +9,6 @@ use warnings;
 use strict;
 use Carp;   # to confess
 use LWP;
-use FileHandle;
 
 sub getFile { my($url) = @_;
    my $agent    = LWP::UserAgent->new( timeout => 80 );
@@ -54,7 +53,7 @@ sub poll_webcam { my($url,$nmPrefix,$pollRate,$dmd) = @_;
          if( not (-d $odir) ) {
             mkdir $odir or die "mkdir $odir failed: $!";
             }
-         my $ofh = new FileHandle( ">$ofnm" ) or confess "couldn't open $ofnm for writing: $!\n";
+         open my $ofh, '>', $ofnm or confess "couldn't open $ofnm for writing: $!\n";
          binmode( $ofh );
          print $ofh $fdata;
          $lastJPG = $fdata;
