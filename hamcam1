@@ -1,0 +1,12 @@
+#!/usr/bin/perl
+
+use strict;
+use FindBin;
+use lib $FindBin::Bin;
+use poll_webcam;
+
+poll_webcam(
+     "http://mthamilton.ucolick.org/hamcam/Cam1.ts.JPG"
+   , "hamcam1"
+   , 2*55
+   );
