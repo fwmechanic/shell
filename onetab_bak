@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+# a (probably extremely brittle) script to backup OneTab Chrome browser extension's
+# saved tabs (since rarely but at least a few times over the years, OneTab's stored
+# tabs have been lost, and it's a significant loss when this happens).
+#
+# this may all be BACKUP THEATER as I have not tested restoration!!!
+
+# I would PREFER a way to script the
+# "'Export URLs' / click mouse in text field / Ctrl+A / save clipboard to a
+# text file" UI sequence: LDB files are completely opaque to me (for all I
+# know, they're encrypted for security), but this lies far outside my area of
+# expertise (and is likely to be browser-specific knowledge of value to me
+# nowhere else)
+
+# todo:
+# todo: Firefox
+# todo: replace OneTab with a more suitable/reliable extension?  (I use OneTab
+#       because it's simple and serves most of my needs, not because it's ideal...)
 
 ts="$(date +'%y%m%dt%H%M%S')"
 
@@ -17,20 +36,25 @@ bakfile() (
    )
 
 bakdir() (
-   if [[ -d "$2" ]]; then
-      destdir="$bakdest/$1"
-      echo "backing up $1 to $destdir"
+   tag="$1" ; shift
+   srcdnm="$1" ; shift
+   if [[ -d "$srcdnm" ]]; then
+      destdir="$bakdest/$tag"
+      echo "backing up $tag to $destdir"
       mkdir -p "$destdir" || die
-      ( cd "$2" && 7z a "${destdir}/$1.7z" -i'!./*.ldb' ) || die "7z failed"
+      destfnm="${destdir}/$tag.7z"
+      echo "backing up $tag to $destfnm"
+      ( cd "$srcdnm" && see 7z a "$destfnm" "$@" ) || die "7z failed"
    fi
    )
 
-
 chrome_ish() (
-   bakdir "chrome" "${LOCALAPPDATA}/Google/Chrome/User Data/Default/Local Storage/leveldb"
+   # only *.ldb files are saved, because all others (except perhaps *.log files, which are of uncertain usefulness)
+   # are (potentially) held locked (cannot even be _read_) when Chrome is open.
+   bakdir "win-chrome" "${LOCALAPPDATA}/Google/Chrome/User Data/Default/Local Storage/leveldb" '-i!./*.ldb'
    )
 
-ffox_ish() (
+ffox_ish() (  # untested
    bakfile "Firefox"  "${APPDATA}\Mozilla\Firefox\Profiles\t71tluuq.default\jetpack\extension@one-tab.com\simple-storage\store.json"
    bakfile "Cyberfox" "${APPDATA}\8pecxstudios\Cyberfox\Profiles\kjnvzpy8.default\jetpack\extension@one-tab.com\simple-storage\store.json"
    )
