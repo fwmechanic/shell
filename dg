@@ -68,12 +68,11 @@ else {             @files = ( "$kdb_dnm/daily_notes.kdb" ); }
 
 my $rex = gen_re_match_all_anyorder( @ARGV );
 
-my $dtag = '';
-my @dtxt;
-my $dmatch;
-my ($chkCtxtHit,$chkLnHit);
+my $dtag = ''; # current diary-entry's date-tag (aka timestamp)
+my @dtxt;      # current diary-entry's text (lines)
+my ($chkDtxtMatch,$chkLnHit);  # methods
 if( $opt_c ) {
-   $chkCtxtHit = sub {
+   $chkDtxtMatch = sub {  # check if @dtxt matches
       my $all = join ' ', @dtxt;
       # print "ALL: " . $all, "\n";
       if( $all =~ m|$rex|o ) {
@@ -95,12 +94,14 @@ for my $fnm ( @files ) {
    open my $ifh, '<', $fnm or die "abend cannot open $fnm for reading: $!\n";
    while (<$ifh>) {
       chomp;
-      my ($dt) = m|^(\d{8}(_\d{4,6})?)|;  # 20200803_1001
+    # my ($dt,$dow) = m/^(\d{8}(?:_\d{4,6})?)(\s+(?:Sunday|Sun|Monday|Mon|Tuesday|Tues|Tue|Wednesday|Wed|Thursday|Thurs|Thu|Thur|Friday|Fri|Saturday|Sat))?/;  # WORKS
+      my ($dt,$dow) = m/^(\d{8}(?:_\d{4,6})?)(\s+(?:[SMTWF][unonuesednesdhursriatur]{2,5}day|Sun|Mon|Tues|Tue|Wed|Thurs|Thur|Thu|Fri|Sat)\b)?/;                # WORKS
       if( $dt ) {
-         $chkCtxtHit->() if $chkCtxtHit;
+         $chkDtxtMatch->() if $chkDtxtMatch;
          $dtag = substr $dt, 0, 8;
          # print $dtag . "\n";
-         $_ = substr $_, length($dt);
+         # print $dow . "#\n" if $dow;
+         $_ = substr $_, length($dt) + ($dow ? length($dow) : 0);
          @dtxt = ( $_ );
          }
       else {
@@ -108,6 +109,6 @@ for my $fnm ( @files ) {
          }
       $chkLnHit->( $_ ) if $chkLnHit;
       }
-   $chkCtxtHit->() if $chkCtxtHit;
+   $chkDtxtMatch->() if $chkDtxtMatch;
    close $ifh;
    }

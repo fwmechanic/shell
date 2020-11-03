@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+ts="$(date +'%y%m%dt%H%M%S')"
+
+bakdest="${LOCALAPPDATA}/kevins-backup-OneTab/$ts"
+mkdir -p "$bakdest" || die
+
+bakfile() (
+   if [[ -f "$2" ]]; then
+      echo "backing up $1"
+      destdir="$bakdest/$1"
+      mkdir -p "$destdir" || die
+      cp "$2" "$destdir/" || die
+   fi
+   )
+
+bakdir() (
+   if [[ -d "$2" ]]; then
+      destdir="$bakdest/$1"
+      echo "backing up $1 to $destdir"
+      mkdir -p "$destdir" || die
+      ( cd "$2" && 7z a "${destdir}/$1.7z" -i'!./*.ldb' ) || die "7z failed"
+   fi
+   )
+
+
+chrome_ish() (
+   bakdir "chrome" "${LOCALAPPDATA}/Google/Chrome/User Data/Default/Local Storage/leveldb"
+   )
+
+ffox_ish() (
+   bakfile "Firefox"  "${APPDATA}\Mozilla\Firefox\Profiles\t71tluuq.default\jetpack\extension@one-tab.com\simple-storage\store.json"
+   bakfile "Cyberfox" "${APPDATA}\8pecxstudios\Cyberfox\Profiles\kjnvzpy8.default\jetpack\extension@one-tab.com\simple-storage\store.json"
+   )
+
+chrome_ish
