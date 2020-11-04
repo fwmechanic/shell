@@ -15,7 +15,8 @@ my($scriptname, $scriptdirs, $scriptsuffix) = fileparse($0);
 sub die_w_usage {
    print STDERR <<"EOT";
 $scriptname: diary-grep
-usage: $scriptname [-a] [-c] [-d] [-f kdbfile] term [term [ ... ]]
+usage: $scriptname [-h] [-a] [-c] [-d] [-f kdbfile] term [term [ ... ]]
+  -h   this help
   -a   search all kdb files
   -c   entry search (entry=text betw date markers)
   -d   display date only
@@ -24,10 +25,11 @@ EOT
    die "abend\n"
    }
 
-our ($opt_a,$opt_c,$opt_d,$opt_f);
-getopts('acdf:');  # -a is boolean flag, -f takes an argument
-                 # Sets $opt_* as a side effect.
+our ($opt_a,$opt_c,$opt_d,$opt_f,$opt_h);
+getopts('acdf:h');  # -a is boolean flag, -f takes an argument
+                    # Sets $opt_* as a side effect.
 
+$opt_h           && die_w_usage;
 scalar @ARGV > 0 || die_w_usage;
 
 if( scalar @ARGV == 1 && $opt_d ) {
