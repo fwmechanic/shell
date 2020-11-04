@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+eb -q *.7z *.zip *.rar ; epall
