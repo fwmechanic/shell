@@ -3,6 +3,8 @@
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 
+optq=0
+
 mkdir_or_die() {  # if already exists, do nothing (existing contents not disturbed)
    [[ -d "$1" ]] || mkdir "$1" || die "could not mkdir $1"
    [[ -d "$1" ]] ||               die "mkdir $1 failed"
@@ -25,10 +27,10 @@ excl_nonebook_files() (
    )
 
 do1file() (
-   echo "arg=$1'"
-   [[ -f "$1" ]] || die "$1 is not a file"
-   sanspath="${1##*/}"       ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
-   sansext="${sanspath%.*}"  ; echo "sansext=$sansext'"
+   ((optq!=0)) || echo "arg=$1'"
+   [[ -f "$1" ]] || { ((optq!=0)) || die "$1 is not a file" ; die ; }
+   sanspath="${1##*/}"       # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+   sansext="${sanspath%.*}"  # ; echo "sansext=$sansext'"
    [[ -d "$sansext" ]] && die "dir $sansext already exists"
 
    7z e -o"$sansext" "$1" || die "7z extraction failed"
@@ -43,6 +45,16 @@ do1file() (
 
    echo "------------------------------- eb successful -------------------------------"
    )
+
+argerr() {  die "usage: $0 [-q] FILE..." ; }
+while getopts "hq" opt; do
+  case $opt in
+    q) optq=1 ;;
+    h) argerr ;;
+   \?) argerr ;;
+  esac
+done
+shift "$((OPTIND-1))"  # shift so that $@, $1, etc. refer to the non-option arguments
 
 for fnm in "$@"; do
    do1file "$fnm"
