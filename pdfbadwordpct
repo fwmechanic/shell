@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+#
+# 20201108 fwmechanic wrote
+#
+# stripped down version of %~dp0/pdfcreatesearchable
+#
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+optq=0
+
+chk_command() { command -v "$1" > /dev/null || die "command '$1' needs to be installed" ; }
+chk_command "pdftotext"
+chk_command "hunspell"
+
+uwords() ( pdftotext -nopgbrk "$1" - | tr ' ' '\n' | sort -u )
+
+# badwordpct kept in lockstep sync with %~dp0/pdfcreatesearchable
+
+badwordpct() ( tgt="$1" base="$2"
+   uwct="0" bwct="0" bwpct="0"
+   uwfnm="$base.uwords" ; uwords "$tgt" > "$uwfnm"
+   if [ -s "$uwfnm" ]; then
+      uwct="$(< "$uwfnm" wc -l)"
+      h_opts=()
+      if [[ "$MY_DICTIONARY" ]]; then  # ref: "burns" COMMENT to https://stackoverflow.com/a/50776529
+         h_opts=( "-p" "$MY_DICTIONARY" )
+      fi
+      # $uwfnm words include punct which hunspell strips (leading to $bwfnm containing dups); `hunspell | sort -u` would make uwct and bwct become apples & oranges ...
+      bwfnm="$base.badwords" && hunspell -d en_US "${h_opts[@]}" -l "$uwfnm" > "$bwfnm" &&
+      bwct="$(<"$bwfnm" wc -l)" &&
+      bwpct=$(( (bwct * 100) / uwct ))
+      printf "%5d %5d %3d %s\n" "$uwct" "$bwct" "$bwpct" "$tgt"
+   fi
+ # rm -f "$uwfnm" "$bwfnm"
+   rm -f "$uwfnm" # basis for updating "$MY_DICTIONARY"
+   )
+
+do1file() (
+   fnm="$1"
+   if [[ ! -f "$fnm" ]]; then
+      ((optq!=0)) || echo "$fnm does not name a file"
+      return
+   fi
+   # break down $fnm:
+   fpath=""
+   if [[ $fnm == */* ]]; then
+      fpath="${fnm%/*}/"
+      cd "$fpath" || die "cd to $fpath failed"
+   fi                                   # ; echo "fpath=$fpath'"
+   # note that because we cd above, remaining filenames used are sanspath
+   sanspath="${fnm##*/}"                # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+   ext="${sanspath##*.}"                # ; echo "ext=$ext'"
+   sansext="${sanspath%.*}"             # ; echo "sansext=$sansext'"
+
+   # logical parameters:
+   badwordpct "$sanspath" "$sansext"
+   )
+
+# parse options
+argerr() {  die "usage: $0 [-q] FILE..." ; }
+while getopts "hq" opt; do
+  case $opt in
+    q) optq=1 ;;
+    h) argerr;;
+    \?) argerr;;
+  esac
+done
+shift "$((OPTIND-1))"  # shift so that $@, $1, etc. refer to the non-option arguments
+
+for fnm in "$@"; do
+   do1file "$fnm"
+done

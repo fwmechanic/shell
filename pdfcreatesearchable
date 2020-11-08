@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+
+#
+# 20201108 fwmechanic wrote
+#
+# works similar to
+# https://github.com/ElectricRCAircraftGuy/PDF2SearchablePDF/blob/master/pdf2searchablepdf.sh
+# but with
+# * more error-checking,
+# * less console logging,
+# * most logging saved to per-input-file logfile,
+# * different pdftoppm params to decrease size of tesseract-generated pdfs,
+# * use pdftotext + hunspell to calc badwordpct (to assess OCR quality),
+# * skip input files whose output file already exists
+# * skip searchable input files
+#
+# See also: %~dp0/pdfbadwordpct  which calcs badwordpct (to assess OCR quality)
+#
+# current workflow examples:
+# # hand edit $HOME/hunspell_mywords which contains my words, one per line
+# # convert to "hunspell-compatible" file:
+# # $sort -u $HOME/hunspell_mywords > $HOME/.hunspell_mywords
+#
+# # run on all pdfs in cwd: (NB: per above, some files matching *.pdf will be ignored; this is a feature)
+# MY_DICTIONARY="$HOME/.hunspell_mywords" $HOME/my/repos/shell/pdfcreatesearchable -q *.pdf
+#
+# Possible future directions:
+# * based on badwordpct (OCR quality), re-run with different pdftoppm params (pdftoppm_opts).
+# * choose pdftoppm_opts based on input images being color or BW/mono
+#   * perhaps by using the default pdftoppm behavior (which extracts current image(s) verbatim?)
+#     and determining the color property of the extracted images...
+#   * `pdftoppm_opts=( "-mono" "-r" "600" )` favors mono scans which are majority of my input pdfs
+#
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+optq=0
+
+chk_command() { command -v "$1" > /dev/null || die "command '$1' needs to be installed" ; }
+chk_command "pdftoppm"
+chk_command "pdftotext"
+chk_command "tesseract"
+chk_command "hunspell"
+
+pdftoppm_opts=( "-tiff" "-r" "300" )  # color: generally results in much larger searchable pdfs
+pdftoppm_opts=( "-mono" "-r" "600" )  # mono
+tgt_suffix="_monocr"
+tgt_ext=".pdf"
+
+uwords() ( pdftotext -nopgbrk "$1" - | tr ' ' '\n' | sort -u )
+
+# badwordpct kept in lockstep sync with %~dp0/pdfbadwordpct
+
+badwordpct() ( tgt="$1" base="$2"
+   uwct="0" bwct="0" bwpct="0"
+   uwfnm="$base.uwords" ; uwords "$tgt" > "$uwfnm"
+   if [ -s "$uwfnm" ]; then
+      uwct="$(< "$uwfnm" wc -l)"
+      h_opts=()
+      if [[ "$MY_DICTIONARY" ]]; then  # ref: "burns" COMMENT to https://stackoverflow.com/a/50776529
+         h_opts=( "-p" "$MY_DICTIONARY" )
+      fi
+      # $uwfnm words include punct which hunspell strips (leading to $bwfnm containing dups); `hunspell | sort -u` would make uwct and bwct become apples & oranges ...
+      bwfnm="$base.badwords" && hunspell -d en_US "${h_opts[@]}" -l "$uwfnm" > "$bwfnm" &&
+      bwct="$(<"$bwfnm" wc -l)" &&
+      bwpct=$(( (bwct * 100) / uwct ))
+      printf "%5d %5d %3d %s\n" "$uwct" "$bwct" "$bwpct" "$tgt"
+   fi
+ # rm -f "$uwfnm" "$bwfnm"
+   rm -f "$uwfnm" # basis for updating "$MY_DICTIONARY"
+   )
+
+do1file() (
+   fnm="$1"
+   if [[ ! -f "$fnm" ]]; then
+      ((optq!=0)) || echo "$fnm does not name a file"
+      return
+   fi
+   # break down $fnm:
+   fpath=""
+   if [[ $fnm == */* ]]; then
+      fpath="${fnm%/*}/"
+      cd "$fpath" || die "cd to $fpath failed"
+   fi                                   # ; echo "fpath=$fpath'"
+   # note that because we cd above, remaining filenames used are sanspath
+   sanspath="${fnm##*/}"                # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+   ext="${sanspath##*.}"                # ; echo "ext=$ext'"
+   sansext="${sanspath%.*}"             # ; echo "sansext=$sansext'"
+   # logical parameters:
+   srcfnm="$sanspath"                   # ; echo "srcfnm=$srcfnm'"
+   tgtbase="$sansext$tgt_suffix"        # ; echo "tgtbase=$tgtfnm'"
+   tgtfnm="$tgtbase$tgt_ext"            # ; echo "tgtfnm=$tgtfnm'"
+
+   if [[ -f "$tgtfnm" && "$tgtfnm" -nt "$srcfnm" ]]; then
+      ((optq!=0)) || echo "skipping: tgtfnm exists '$tgtfnm'"
+   else
+      src_uwordct="$(uwords "$srcfnm" | wc -l)"
+      if (( src_uwordct > 0 )); then
+         badwordpct "$srcfnm" "$sansext"
+      else
+         logfnm="$tgtbase.log" # ; echo "logfnm=$logfnm'"
+         rm -f "$logfnm" || die "rm $logfnm failed"
+         pgimgfnmpfx="$tgtbase-pg"
+         rm -f "$pgimgfnmpfx"* || die "rm ${pgimgfnmpfx}* failed"
+         tesstgtfnm="$pgimgfnmpfx-tmp"  # tesseract param naming output file must not include output file extension (tess supplies this)
+         flfnm="$tgtbase.tessfl" ; rm -f "$flfnm" || die "rm $flfnm failed"
+         {
+         see pdftoppm "${pdftoppm_opts[@]}" "$srcfnm" "$pgimgfnmpfx" &&
+         see find . -type f -name "$pgimgfnmpfx"'*' | sort -V > "$flfnm" &&
+         [ -s "$flfnm" ] &&
+         see tesseract -l "eng" "$flfnm" "$tesstgtfnm" pdf &&
+         mv "$tesstgtfnm.pdf" "$tgtfnm" &&
+         rm -f "$pgimgfnmpfx"* &&
+         rm -f "$flfnm"
+         } > "$logfnm" 2>&1 || { rm -f "$tesstgtfnm.pdf" ; die "conversion failed: $srcfnm" ; }
+         badwordpct "$tgtfnm" "$tgtbase"
+         # rm -f "$logfnm"
+      fi
+   fi
+   )
+
+# parse options
+argerr() {  die "usage: $0 [-q] FILE..." ; }
+while getopts "hq" opt; do
+  case $opt in
+    q) optq=1 ;;
+    h) argerr;;
+    \?) argerr;;
+  esac
+done
+shift "$((OPTIND-1))"  # shift so that $@, $1, etc. refer to the non-option arguments
+
+for fnm in "$@"; do
+   do1file "$fnm"
+done
