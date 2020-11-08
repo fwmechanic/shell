@@ -7,10 +7,16 @@ use warnings;
 
 use English;
 
-use Term::ReadKey;
+BEGIN { $| = 1;
+   STDOUT->autoflush(1);
+   }
+
 use File::Find;
 
 my $testing = 1;    # 0 for interactive mode, 1 to skip all deletion etc
+
+use if ! $testing, "Term::ReadKey", qw( ReadKey ReadMode ) ;
+
 my $minsize = 100;  # skip files smaller than $minsize bytes. Set to zero if you like...
 
 sub usage {
@@ -34,12 +40,12 @@ find(\&wanted, $ARGV[0] || ".");
 my ($fileschecked, $wasted) = (0,0);
 # update progress display 1000 times maximum
 #  $update_period = int($filecount/1000)+1;
-my $update_period = 10;
+my $update_period = 1;
 sub progress {
-  if (++$fileschecked % $update_period == 0) {
-    printf "Progress: $fileschecked/$filecount\r";
-    # note \r does carriage return, but NO LINE FEED
-    # for progress display
+  if( (++$fileschecked % $update_period) == 0 ) {
+  # print "Progress: $fileschecked/$filecount\r";  # \r does carriage return, but NO LINE FEED for progress display
+    printf "Progress: $fileschecked/$filecount\n";
+    select()->flush();
     }
   }
 progress();
@@ -93,12 +99,12 @@ foreach my $size (keys %files) {
 
 sub GetAKey {
   # use ReadKey to get user input
-  ReadMode 4; # Turn off controls keys
+  ReadMode( 4 ); # Turn off controls keys
   my $key = '';
   while (not defined ($key = ReadKey(-1))) {
     # No key yet
     }
-  ReadMode 0; # Reset tty mode before exiting
+  ReadMode( 0 ); # Reset tty mode before exiting
   return $key;
   }
 
