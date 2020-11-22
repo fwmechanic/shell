@@ -14,7 +14,7 @@ read_mean_volume_neg_db() (
 outfnm_suffix="_normvol.mp3"
 
 normvol_to_mp3() (
-   set -x
+   # set -x
    outfnm="${1%.*}$outfnm_suffix"
    [[ -f "$outfnm" && "$outfnm" -nt "$1" ]] && die "exists $outfnm"
    dbadj="$(read_mean_volume_neg_db "$1")" || die "read_mean_volume_neg_db failed on $1"
