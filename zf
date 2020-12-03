@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 
 mkdir_or_die() {  # if already exists, do nothing (existing contents not disturbed)
    [[ -d "$1" ]] || mkdir "$1" || die "could not mkdir $1"
@@ -10,10 +11,33 @@ zfdin="./_consumed" ; mkdir_or_die "$zfdin"   # when making a bulk run, it's han
 zfdout="./_output"  ; mkdir_or_die "$zfdout"  # in vs out files (empty before starting! TODO: add a common date-code prefix to $zfdin & $zfdout)
 
 do1file() (
-   echo "fnm=$1'"
-   [[ -f "$1" ]] || die "$1 is not a file"
-   sanspath="${1##*/}"       ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
-   sansext="${sanspath%.*}"  ; echo "sansext=$sansext'"
+   fnm="$1"  # ; echo "fnm=$1'"
+   [[ -f "$fnm" ]] || die "$fnm is not a file"
+
+   # break down $fnm:
+   fpath=""
+   if [[ $fnm == */* ]]; then
+      fpath="${fnm%/*}/"
+      cd "$fpath" || die "cd to $fpath failed"
+   fi                                   # ; echo "fpath=$fpath'"
+
+   sanspath="${1##*/}"         ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+   ext="${sanspath##*.}"       ; echo "ext=$ext'"
+   sansext="${sanspath%.*}"    ; echo "sansext=$sansext'"
+
+   case "$ext" in
+      mp3|m4a|m4b)
+         see mkdir "$sansext" &&
+         mv "$sanspath" "$sansext/" &&
+         z1d "$sansext/" &&
+         rm -rf "z1d_$sansext/" &&
+         [[ -f "$sansext.zip" ]] &&
+         mv "$sansext.zip" "$zfdout/"
+         return ;;
+   esac
+
+   if [[ "$ext" == "mp3" ]]; then return ; fi
+
    [[ -d "$sansext" ]] && die "dir $sansext already exists"
    7z e -o"$sansext" "$1" || die "7z extraction failed"
    (cd "$sansext" && find . -type d -empty -delete)   # `7z e ...` can create empty dirs in output dir: delete them
