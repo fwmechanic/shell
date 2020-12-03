@@ -31,7 +31,7 @@ do1file() (
    [[ -f "$1" ]] || { ((optq!=0)) || die "$1 is not a file" ; die ; }
    sanspath="${1##*/}"       # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
    sansext="${sanspath%.*}"  # ; echo "sansext=$sansext'"
-   [[ "${sanspath,,}" == *_code.zip ]] && die "skipping code-zip file $sanspath"
+   [[ "${sanspath,,}" == *[_.]code.zip ]] && die "skipping code-zip file $sanspath"
    [[ -d "$sansext" ]] && die "dir $sansext already exists"
 
    7z e -o"$sansext" "$1" || die "7z extraction failed"
