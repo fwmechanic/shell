@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+# smartctl must be run as root to do anything useful
+(( EUID == 0 )) || die "smart_check_all: must run as root!"  # cannot log
+logf="${SMART_CHECK_ALL_LOGFILE:-"/root/smart_check_all.log"}"
+log() { printf "$(ts) %s\n" "$*" >> "$logf" ; }
+die() { log "$@" ; exit 1 ; }
+
+ts() { date +'%y%m%dt%H%M%S' ; }
+
+echo >> "$logf" ; log "starting"
+
+PATH="$PATH:/usr/sbin"  # smartctl lives here
+
+command -v findmnt  > /dev/null || die "smart_check_all: findmnt command not available; PATH=$PATH"
+command -v smartctl > /dev/null || die "smart_check_all: smartctl command not available; PATH=$PATH"
+
+secs_start=$SECONDS
+failcount=0 devcount=0
+while read -r UUID SIZE SOURCE TARGET LABEL ; do
+   (( ++devcount ))
+   # echo "UUID=$UUID,SIZE=$SIZE,SOURCE=$SOURCE,TARGET=$TARGET,LABEL=$LABEL"
+   : "${LABEL=-$UUID}"
+   log "checking $SOURCE $TARGET $LABEL $SIZE"
+   if smartctl -H "$SOURCE" > /dev/null ; then
+      log "passed   $SOURCE"
+   else
+      xstatus=$? # ; echo "xstatus=$xstatus"
+      (( ++failcount ))
+      log "$(printf "failed   %s 0x%X\n" "$SOURCE" "$xstatus")"
+   fi
+done < <(findmnt -nr -t ext4 -o UUID,SIZE,SOURCE,TARGET,LABEL)
+log "$failcount failures found across $devcount devices in $(( SECONDS - secs_start )) seconds"
+
+exit $(( failcount > 0 ? 1 : 0 ))
