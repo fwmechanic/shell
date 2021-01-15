@@ -1,0 +1,75 @@
+#!/usr/bin/perl
+
+# Find files containing shebang line matching passed regex; trailing params are name(s) of dirs to search (default: pwd).
+# options:
+# -p: search dirs in $PATH
+# -r: search passed dirs recursively
+#
+# this impl is WAY faster than any shell scripting solution (using `find -exec`) I've tried.
+#
+# 20210114 Thu fwmechanic wrote
+
+use strict;
+use warnings;
+use Getopt::Std;
+use File::Find;
+
+our ($opt_h,$opt_p,$opt_r);
+getopts( "hpr" );
+
+# die "-p and -r are mutually exclusive\n" if $opt_p && $opt_r;
+
+if( $opt_p ) {
+   my @pathdnms = split( ':', $ENV{PATH} );
+   # local $, = "\n"; print "@pathdnms\n";
+   push @ARGV, @pathdnms;
+   }
+
+my $rex = shift || die "missing regex";
+
+my $find_shebangs_matching_glob = sub { # print "\$find_shebangs_matching_glob( @_ )\n";
+   my $noread = 0;
+   for my $dir ( @_ ) {
+    # print "\$dir = $dir\n";
+      my @files = glob( $dir."/*" );
+      # executable and: No dirs, symlinks, sockets, pipes, character files, block files or ttys (-R does not work on Windows)
+      @files = grep { -f $_ && -X $_ && !(-d $_ || -l $_ || -S $_ || -p $_ || -c $_ || -b $_ || -t $_) } @files;  # fok EXPR sync w/below
+      # local $, = "\n"; print "@files\n\n";
+      for my $fnm ( sort @files ) {
+       # print "\$fnm = $fnm\n";
+         if( open( my $ifh, '<', $fnm ) ) {
+            my $firstLine = <$ifh>;
+            close $ifh;
+            if( $firstLine && $firstLine =~ m|^#!| && $firstLine =~ m|$rex|o ) {
+               print "$fnm\n";
+               }
+            }
+         else {
+            ++$noread;
+            }
+         }
+      }
+ # print "\$noread=$noread\n";
+   };
+
+my $find_shebangs_matching = sub { #print "\$find_shebangs_matching( @_ )\n";
+   my $check = sub {
+      return if $File::Find::dir =~ m!/\.(?:git|kbackup)!o;
+    # print "DIR: $File::Find::name\n" if -d;
+      return unless -f $_ && -X $_ && !(-d $_ || -l $_ || -S $_ || -p $_ || -c $_ || -b $_ || -t $_);  # fok EXPR sync w/above
+      open my $ifh, '<', $_ or die "cannot open $File::Find::name for reading: $!";
+      my $firstLine = <$ifh>;
+      close $ifh;
+      if( $firstLine && $firstLine =~ m|^#!| && $firstLine =~ m|$rex|o ) {
+         print "$File::Find::name\n";
+         }
+      };
+   find( $check, @_ );
+   };
+
+my @dirs = @ARGV ? @ARGV : (".");
+my %seen;                                   # remove dups
+   @dirs = grep { not $seen{$_}++ } @dirs;  # which $PATH often contains
+# print "\@dirs=( @dirs )\n";
+my $ff = $opt_r ? $find_shebangs_matching : $find_shebangs_matching_glob;
+$ff->( @dirs );
