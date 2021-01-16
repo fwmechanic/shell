@@ -2,74 +2,107 @@
 
 # Find files containing shebang line matching passed regex; trailing params are name(s) of dirs to search (default: pwd).
 # options:
-# -p: search dirs in $PATH
+# -p: search dirs in $PATH implies not -r
 # -r: search passed dirs recursively
+# -a: collate by shebang-string; implies -p
 #
 # this impl is WAY faster than any shell scripting solution (using `find -exec`) I've tried.
 #
 # 20210114 Thu fwmechanic wrote
+#
 
 use strict;
 use warnings;
 use Getopt::Std;
 use File::Find;
+use English;
 
-our ($opt_h,$opt_p,$opt_r);
-getopts( "hpr" );
+our ($opt_h,$opt_a,$opt_p,$opt_r);
+getopts( "ahpr" );
 
-# die "-p and -r are mutually exclusive\n" if $opt_p && $opt_r;
+my $rex;
+my $eachFnm = \&justShow;
+my $atEnd = \&nothing;
+
+if( $opt_a ) {
+   !($opt_p && $opt_r) || die "-a must be used alone\n";
+   $rex = '\S';
+   $opt_p = 1;
+   $eachFnm = \&collect;
+   $atEnd = \&prCollection;
+   }
+else {
+   die "-p and -r are mutually exclusive\n" if $opt_p && $opt_r;
+   $rex = shift || die "missing regex";
+   }
 
 if( $opt_p ) {
-   my @pathdnms = split( ':', $ENV{PATH} );
-   # local $, = "\n"; print "@pathdnms\n";
+   my @pathdnms = split( ':', $ENV{PATH} );  # local $LIST_SEPARATOR = "\n"; print "@pathdnms\n";
    push @ARGV, @pathdnms;
    }
 
-my $rex = shift || die "missing regex";
+my @files;
+my %byShebang;
 
-my $find_shebangs_matching_glob = sub { # print "\$find_shebangs_matching_glob( @_ )\n";
+sub justShow { my ($fnm,$firstline) = @_; print "$fnm\n"; }
+sub collect  { my ($fnm,$firstline) = @_;
+   $firstline =~ s!\s+! !g;    # reduce
+   $firstline =~ s!\s$!!;      # trim
+   $firstline =~ s|^#!\s|#!|;  # squash/norm
+   push @{$byShebang{ $firstline }}, $fnm;
+   }
+sub nothing {}
+sub prCollection {
+   my $ind = '  ';
+   local $LIST_SEPARATOR = "\n$ind";
+   for my $she ( sort keys %byShebang ) {
+      print "$she\n$ind@{$byShebang{ $she }}\n";
+      }
+   }
+
+sub addFiles {
+   push @files, grep { -f $_ && -X $_ && !(-d $_ || -l $_ || -S $_ || -p $_ || -c $_ || -b $_ || -t $_) } @_;
+   }
+
+sub processFiles {
    my $noread = 0;
-   for my $dir ( @_ ) {
-    # print "\$dir = $dir\n";
-      my @files = glob( $dir."/*" );
-      # executable and: No dirs, symlinks, sockets, pipes, character files, block files or ttys (-R does not work on Windows)
-      @files = grep { -f $_ && -X $_ && !(-d $_ || -l $_ || -S $_ || -p $_ || -c $_ || -b $_ || -t $_) } @files;  # fok EXPR sync w/below
-      # local $, = "\n"; print "@files\n\n";
-      for my $fnm ( sort @files ) {
-       # print "\$fnm = $fnm\n";
-         if( open( my $ifh, '<', $fnm ) ) {
-            my $firstLine = <$ifh>;
-            close $ifh;
-            if( $firstLine && $firstLine =~ m|^#!| && $firstLine =~ m|$rex|o ) {
-               print "$fnm\n";
-               }
+   for my $fnm ( sort @files ) {  # print "\$fnm = $fnm\n";
+      if( open( my $ifh, '<', $fnm ) ) {
+         my $firstLine = <$ifh>;
+         close $ifh;
+         if( $firstLine && $firstLine =~ m|^#!| && $firstLine =~ m|$rex|o ) {
+            chomp $firstLine;  # print "$fnm => $firstLine\n";
+            $eachFnm->( $fnm, $firstLine );
             }
-         else {
-            ++$noread;
-            }
+         }
+      else {
+         ++$noread;
          }
       }
  # print "\$noread=$noread\n";
-   };
+   }
 
-my $find_shebangs_matching = sub { #print "\$find_shebangs_matching( @_ )\n";
-   my $check = sub {
-      return if $File::Find::dir =~ m!/\.(?:git|kbackup)!o;
-    # print "DIR: $File::Find::name\n" if -d;
-      return unless -f $_ && -X $_ && !(-d $_ || -l $_ || -S $_ || -p $_ || -c $_ || -b $_ || -t $_);  # fok EXPR sync w/above
-      open my $ifh, '<', $_ or die "cannot open $File::Find::name for reading: $!";
-      my $firstLine = <$ifh>;
-      close $ifh;
-      if( $firstLine && $firstLine =~ m|^#!| && $firstLine =~ m|$rex|o ) {
-         print "$File::Find::name\n";
-         }
-      };
-   find( $check, @_ );
-   };
+sub find_shebangs_matching_glob { # print "\$find_shebangs_matching_glob( @_ )\n";
+   for my $dir ( @_ ) {  # print "\$dir = $dir\n";
+      addFiles( glob( $dir."/*" ) );
+      }
+   }
+
+sub find_shebangs_matching { #print "\$find_shebangs_matching( @_ )\n";
+   find(
+      sub {
+         return if $File::Find::dir =~ m!/\.(?:git|kbackup)!o;
+       # print "DIR: $File::Find::name\n" if -d;
+         addFiles( $File::Find::name );
+         }, @_
+       );
+   }
 
 my @dirs = @ARGV ? @ARGV : (".");
 my %seen;                                   # remove dups
    @dirs = grep { not $seen{$_}++ } @dirs;  # which $PATH often contains
 # print "\@dirs=( @dirs )\n";
-my $ff = $opt_r ? $find_shebangs_matching : $find_shebangs_matching_glob;
+my $ff = $opt_r ? \&find_shebangs_matching : \&find_shebangs_matching_glob;
 $ff->( @dirs );
+processFiles();
+$atEnd->();
