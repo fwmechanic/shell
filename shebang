@@ -2,9 +2,11 @@
 
 # Find files containing shebang line matching passed regex; trailing params are name(s) of dirs to search (default: pwd).
 # options:
-# -p: search dirs in $PATH implies not -r
+# -p: search dirs in $PATH; implies not -r
 # -r: search passed dirs recursively
 # -a: collate by shebang-string; implies -p
+# -2: initially read only first 2 bytes of file (experimental)
+# -s: show stats on stderr
 #
 # this impl is WAY faster than any shell scripting solution (using `find -exec`) I've tried.
 #
@@ -17,8 +19,8 @@ use Getopt::Std;
 use File::Find;
 use English;
 
-our ($opt_h,$opt_a,$opt_p,$opt_r);
-getopts( "ahpr" );
+our ($opt_h,$opt_a,$opt_p,$opt_r,$opt_s,$opt_2);
+getopts( "ahprs2" );
 
 my $rex;
 my $eachFnm = \&justShow;
@@ -64,16 +66,34 @@ sub addFiles {
    push @files, grep { -f $_ && -X $_ && !(-d $_ || -l $_ || -S $_ || -p $_ || -c $_ || -b $_ || -t $_) } @_;
    }
 
+my ($fct,$shect,$hitct,$noread) = (0,0,0,0);
+
 sub processFiles {
-   my $noread = 0;
    for my $fnm ( sort @files ) {  # print "\$fnm = $fnm\n";
+      ++$fct;
       if( open( my $ifh, '<', $fnm ) ) {
-         my $firstLine = <$ifh>;
-         close $ifh;
-         if( $firstLine && $firstLine =~ m|^#!| && $firstLine =~ m|$rex|o ) {
-            chomp $firstLine;  # print "$fnm => $firstLine\n";
-            $eachFnm->( $fnm, $firstLine );
+         if( $opt_2 ) {  # theory: 99% of files scanned (on Windows) will NOT contain shebang, so optimize shebang-presence-check by reading only 1st 2 chars (vs. whole line)
+            read $ifh, my $sh2, 2;
+            if( $sh2 && $sh2 eq '#!' ) {
+               ++$shect;
+               seek $ifh, 0, 0;
+               my $firstLine = <$ifh>;
+               if( $firstLine && $firstLine =~ m|^#!.*$rex|o ) {
+                  chomp $firstLine;  # print "$fnm => $firstLine\n";
+                  $eachFnm->( $fnm, $firstLine );
+                  ++$hitct;
+                  }
+               }
             }
+         else {
+            my $firstLine = <$ifh>;
+            if( $firstLine && $firstLine =~ m|^#!|o && ++$shect && $firstLine =~ m|^#!.*$rex|o ) {
+               chomp $firstLine;  # print "$fnm => $firstLine\n";
+               $eachFnm->( $fnm, $firstLine );
+               ++$hitct;
+               }
+            }
+         close $ifh;
          }
       else {
          ++$noread;
@@ -106,3 +126,6 @@ my $ff = $opt_r ? \&find_shebangs_matching : \&find_shebangs_matching_glob;
 $ff->( @dirs );
 processFiles();
 $atEnd->();
+if( $opt_s ) {
+   printf STDERR "%6d hits\n%6d shebangs\n%6d files\n%6d unreadables\n", $hitct, $shect, $fct,$noread;
+   }
