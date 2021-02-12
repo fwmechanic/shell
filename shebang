@@ -27,9 +27,9 @@ my $eachFnm = \&justShow;
 my $atEnd = \&nothing;
 
 if( $opt_a ) {
-   !($opt_p && $opt_r) || die "-a must be used alone\n";
+ # !($opt_p && $opt_r) || die "-a must be used alone\n";
    $rex = '\S';
-   $opt_p = 1;
+ # $opt_p = 1;
    $eachFnm = \&collect;
    $atEnd = \&prCollection;
    }
