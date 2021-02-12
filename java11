@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
 
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
 . jdk11vars
-"$jdkhome/bin/java" "$@"
+j11homes=( "$jdkhome" "/c/Program Files/Zulu/zulu-11" )
+for jh in "${j11homes[@]}"; do
+   jbin="$jh/bin"
+   if [[ -d "$jbin" ]]; then
+      jbj="$jbin/java"
+      if [[ -x "$jbj" ]]; then
+         see "$jbj" "$@"
+         break;
+      fi
+   fi
+done
