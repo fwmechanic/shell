@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
-see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+see() ( { set -x; } 2>/dev/null ; "$@" )
 
 optq=0
 
