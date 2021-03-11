@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+command -v qpdf > /dev/null || die "qpdf needs to be installed"
+
+do1file() (
+   fnm="$1"
+   if [[ ! -f "$fnm" ]]; then
+      echo "$fnm does not name a file"
+      return
+   fi
+   # break down $fnm:
+   fpath=""
+   if [[ $fnm == */* ]]; then
+      fpath="${fnm%/*}/"
+      cd "$fpath" || die "cd to $fpath failed"
+   fi                                   # ; echo "fpath=$fpath'"
+   # note that because we cd above, remaining filenames used are sanspath
+   sanspath="${fnm##*/}"                # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+   ext="${sanspath##*.}"                # ; echo "ext=$ext'"
+   sansext="${sanspath%.*}"             # ; echo "sansext=$sansext'"
+   # logical parameters:
+   bakfnm="${sansext}_orig.$ext"          ; echo "bakfnm  $bakfnm"
+   destfnm="$sanspath"                    ; echo "destfnm $destfnm'"
+   mv -n "$destfnm" "$bakfnm" || die "backup-create move failed"
+   dorot "$bakfnm" "$destfnm"
+   )
+
+dorot() ( qpdf --rotate="$rotdeg" "$1" "$2" )
+
+help() { die "need rotmode file [file...] where rotmode is one of cw ccw 180" ; }
+
+rotmode="$1" ; shift || help
+case $rotmode in
+  cw)  rotdeg=+90 ;;
+  ccw) rotdeg=-90 ;;
+  180) rotdeg=180 ;;
+  \?)  help       ;;
+esac
+[[ "$rotdeg" ]] || help
+[[ "$1" ]] || echo "missing name of file(s) to rotate"
+
+for fnm in "$@"; do
+   do1file "$fnm"
+done
