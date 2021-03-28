@@ -3,7 +3,7 @@
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 
-optq=0
+optq=0 force=0
 
 find_ec_binary() (
    ecxbnm="ebook-convert"
@@ -31,9 +31,10 @@ ecbin_version_2line="$("$ecbin" --version)" ; read -r ecbin_version <<<"$ecbin_v
 
 convert_to_pdf() (
    # https://manual.calibre-ebook.com/generated/en/ebook-convert.html#pdf-output-options
-   mpts="3" mpo='--pdf-page-margin-'
+   mpts=3 mpo='--pdf-page-margin-'
+   mbotpts="${EP_PDF_PG_MARGIN_BOTTOM:-"$mpts"}"
    echo "$ecbin_version"
-   see "$ecbin" "$1" "$2" --output-profile=ipad --use-profile-size "${mpo}bottom=$mpts" "${mpo}left=$mpts" "${mpo}right=$mpts" "${mpo}top=$mpts"
+   see "$ecbin" "$1" "$2" --output-profile=ipad --use-profile-size "${mpo}bottom=$mbotpts" "${mpo}left=$mpts" "${mpo}right=$mpts" "${mpo}top=$mpts"
    )
 
 do1file() {
@@ -54,13 +55,13 @@ do1file() {
       local sansext="${sanspath%.*}"            # ; echo "sansext=$sansext'"
       local srcfnm="$fnm"                       # ; echo "srcfnm=$srcfnm'"
       local tgtfnm="$fpath$sansext.medtype.pdf" # ; echo "tgtfnm=$tgtfnm'"
-      if [[ -f "$tgtfnm" && "$tgtfnm" -nt "$srcfnm" ]]; then
+      if ((!force)) && [[ -f "$tgtfnm" && "$tgtfnm" -nt "$srcfnm" ]]; then
          ((optq!=0)) || echo "skipping: tgtfnm exists '$tgtfnm'"
       else
          local logfnm="$fpath$sansext.log"      # ; echo "logfnm=$logfnm'"
          if [[ -f "$logfnm"  ]]; then
             local logver ; read -r logver < "$logfnm"
-            if [[ "$logver" != "$ecbin_version" ]]; then
+            if ((force)) || [[ "$logver" != "$ecbin_version" ]]; then
                ((optq!=0)) || echo "logver != ecbin_version: $logver != $ecbin_version"
                rm -f "$logfnm"
             fi
@@ -82,8 +83,9 @@ do1file() {
 
 # parse options
 argerr() {  die "usage: $0 [-q] FILE..." ; }
-while getopts "hq" opt; do
+while getopts "fqh" opt; do
   case $opt in
+    f) force=1 ;;
     q) optq=1 ;;
     h) argerr;;
     \?) argerr;;
