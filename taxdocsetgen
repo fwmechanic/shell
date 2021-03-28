@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+#
+# Background:
+# 1. I pay someone to prepare my taxes.
+# 2. I "dropbox" the preparer all my source documents along with a "Cover
+#    Letter" containing important updates, messages, highlights, etc.
+# 3. I've learned that sending the preparer a collection of individual pdfs
+#    (which is what my source-doc ingestion process yields) is an AWFUL idea.
+# 4. It is to my massive benefit to do anything I possibly can to error-proof
+#    the preparer's processing of my tax source document collection.
+# 5. My search for an open-source cmdline tool that would combine a collection
+#    of pdf files into one pdf, with Table of Contents and source-filename +
+#    overall-pgnum footers, led me to sejda-console.
+#
+# This script:
+# a. generates my cover-letter pdf from its markdown source file using my
+#    ep script (with special margin configuration).
+# b. amalgamates all pdfs into one pdf using sejda-console.
+#
+# NB: sejda-console by default incorporates input files into the merged
+#     output PDF in lexicographical input filename order, so it is key to
+#     adhere to a regular input-file naming convention (which in my case in
+#     addition sorts the cover letter first overall).
+#
+# 20210327 kg translated from nausea-inducing BAT file (but aren't they all?).
+#
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+# setup:
+# * provide sejda-console
+#   Notes:
+#     * sejda-console requires java 8+ in PATH
+#       * I have used Zulu OpenJDK 8 w/success
+#       * I have used Zulu OpenJDK 11 w/success
+#     * The FINAL open-source release of sejda-console is sejda-console-3.2.85:
+#       unzip sejda-console-3.2.85.zip into ./sejda-console-3.2.85
+sejcon="./sejda-console-3.2.85/bin/sejda-console"
+[[ -x "$sejcon" ]] || die "executable not found: $sejcon"
+#     * Aside: sejda-console is now available via choco
+#         Posible drawbacks (unverified):
+#           choco will probably install java pkg prerequisite (which while
+#             convenient, may well be dead weight).
+#           I'm not sure a choco install of sejda-console will include its (ba)sh (not BAT) interface script
+TXYR=2020  # modify according to ... which tax year it is
+taxdoc_dnm="./${TXYR}_Taxes"  # assumed tax-doc-collection dirnm
+[[ -d "$taxdoc_dnm" ]] || die "dir not found: $taxdoc_dnm"
+cover_src="$taxdoc_dnm/${TXYR}_!Cover.Letter.md"  # edit "$cover_src" (Cover Letter) as needed
+[[ -f "$cover_src" ]] || die "file does not exist: $cover_src"
+EP_PDF_PG_MARGIN_BOTTOM=18 ep -f "$cover_src"  # raise bottom margin to avoid collision with sejda-console --footer
+"$sejcon" merge --footer --bookmarks one_entry_each_doc --toc file_names -d "$taxdoc_dnm" --overwrite -o "$taxdoc_dnm/output/K.Goodwin.TY${TXYR}.src.docset.pdf" && start "$taxdoc_dnm/output/K.Goodwin.TY${TXYR}.src.docset.pdf"
