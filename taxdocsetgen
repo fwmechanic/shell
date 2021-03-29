@@ -27,6 +27,7 @@
 #
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 
 # setup:
 # * provide sejda-console
@@ -48,5 +49,5 @@ taxdoc_dnm="./${TXYR}_Taxes"  # assumed tax-doc-collection dirnm
 [[ -d "$taxdoc_dnm" ]] || die "dir not found: $taxdoc_dnm"
 cover_src="$taxdoc_dnm/${TXYR}_!Cover.Letter.md"  # edit "$cover_src" (Cover Letter) as needed
 [[ -f "$cover_src" ]] || die "file does not exist: $cover_src"
-EP_PDF_PG_MARGIN_BOTTOM=18 ep -f "$cover_src"  # raise bottom margin to avoid collision with sejda-console --footer
-"$sejcon" merge --footer --bookmarks one_entry_each_doc --toc file_names -d "$taxdoc_dnm" --overwrite -o "$taxdoc_dnm/output/K.Goodwin.TY${TXYR}.src.docset.pdf" && start "$taxdoc_dnm/output/K.Goodwin.TY${TXYR}.src.docset.pdf"
+EP_PDF_PG_MARGIN_BOTTOM=20 ep -f "$cover_src"  # raise bottom margin to avoid collision with sejda-console --footer
+>sejda.log see "$sejcon" merge --footer --bookmarks one_entry_each_doc --toc file_names -d "$taxdoc_dnm" --overwrite -o "$taxdoc_dnm/output/K.Goodwin.TY${TXYR}.src.docset.pdf" && start "$taxdoc_dnm/output/K.Goodwin.TY${TXYR}.src.docset.pdf"
