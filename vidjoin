@@ -12,13 +12,21 @@ dfltofnm="out.mp4"
 listfnm="ffmpg_join.tmp"
 # ffmpeg -i "concat:out0.mp4|out1.mp4" -c copy "$dfltofnm"
 
+if1="${1:-"out0.mp4"}"
+if2="${2:-"out1.mp4"}"
+
 rm -f "$listfnm" || die "rm failed?"
-cat <<'HEREDOC' > "$listfnm"
-file 'out0.mp4'
-file 'out1.mp4'
+cat <<HEREDOC > "$listfnm"
+file '$if1'
+file '$if2'
 HEREDOC
-# stdin process substitution '>( echo "file 'out0.mp4'" ; echo "file 'out1.mp4'" )'
+
+# stdin process substitution
+#    cat <( printf '%s\n%s\n' "file '$if1'" "file '$if2'" )
+# would be better (no temp file to manage), BUT ffmpeg cannot accept it
+# $ vidjoin
+# /proc/4993/fd/63: No such file or directory
 
 { set -x 2> /dev/null ; }
-# ffmpeg -hide_banner -y -f concat -safe 0 -i >( echo "file 'out0.mp4'" ; echo "file 'out1.mp4'" ) -c copy "$dfltofnm"
+# ffmpeg -hide_banner -y -f concat -safe 0 -i <( printf '%s\n%s\n' "file '$if1'" "file '$if2'" ) -c copy "$dfltofnm"
   ffmpeg -hide_banner -y -f concat -safe 0 -i "$listfnm" -c copy "$dfltofnm"
