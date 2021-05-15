@@ -7,15 +7,15 @@ use warnings;
 
 use English;
 
-BEGIN { $| = 1;
-   STDOUT->autoflush(1);
-   }
+# BEGIN { $| = 1;
+#    STDOUT->autoflush(1);
+#    }
 
 use File::Find;
 
 my $testing = 1;    # 0 for interactive mode, 1 to skip all deletion etc
 
-use if ! $testing, "Term::ReadKey", qw( ReadKey ReadMode ) ;
+# use if ! $testing, "Term::ReadKey", qw( ReadKey ReadMode ) ;
 
 my $minsize = 100;  # skip files smaller than $minsize bytes. Set to zero if you like...
 
@@ -37,6 +37,8 @@ sub wanted {
   }
 find(\&wanted, $ARGV[0] || ".");
 
+print "find done, $filecount files suitable found\n";
+
 my ($fileschecked, $wasted) = (0,0);
 # update progress display 1000 times maximum
 #  $update_period = int($filecount/1000)+1;
@@ -48,16 +50,15 @@ sub progress {
     select()->flush();
     }
   }
-progress();
 
 my @dupesets;  # list of lists - @{$dupesets[0]} = (file1, file2), where file1 and file2 are dupes
 foreach my $size (keys %files) {
-  my @entries = @{$files{$size}};
-  my $samesizecount = scalar @entries;
-  if (@{$files{$size}} == 1) {  # unique size
+  if( scalar @{$files{$size}} == 1 ) {  # unique size
     progress();
     next;
     }
+  printf "size $size x%d\n", scalar @{$files{$size}};
+  my @entries = @{$files{$size}};
   # duplicates by file size.. Check if files are the same
   while (my $base = shift @entries) {
     # get first entry in list under filesize
@@ -97,16 +98,16 @@ foreach my $size (keys %files) {
     }
   }
 
-sub GetAKey {
-  # use ReadKey to get user input
-  ReadMode( 4 ); # Turn off controls keys
-  my $key = '';
-  while (not defined ($key = ReadKey(-1))) {
-    # No key yet
-    }
-  ReadMode( 0 ); # Reset tty mode before exiting
-  return $key;
-  }
+# sub GetAKey {
+#   # use ReadKey to get user input
+#   ReadMode( 4 ); # Turn off controls keys
+#   my $key = '';
+#   while (not defined ($key = ReadKey(-1))) {
+#     # No key yet
+#     }
+#   ReadMode( 0 ); # Reset tty mode before exiting
+#   return $key;
+#   }
 
 print("\n");
 if (@dupesets) {       # at least one set of duplicates exists
@@ -136,7 +137,8 @@ if (@dupesets) {       # at least one set of duplicates exists
       print ++$count, ": keep ONLY $entry\n";
       }
 
-    my $key = GetAKey();
+  # my $key = GetAKey();
+    my $key;
     print "you chose: '$key' => ";
     if ($key =~ /^\d+$/) {
       $key = $key - 1;  # user selection chars are 1-based, @dupes uses 0-based indexing
