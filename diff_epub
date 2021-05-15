@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 
-zip7stat() { 7z l -ba -slt "$1" ; }
-epub_mask() { perl -pe 's!(?:OPS|OEBPS)([\\/])!EPUB$1!g' ; }  # tr "[:upper:]" "[:lower:]" |
-epub_ls_diffable() { zip7stat "$1" | epub_mask | 7zl_diffable > "$1.z7stat" ; }
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
 
-epub_ls_diffable "$1"
-epub_ls_diffable "$2"
+[[ "$#" -eq 2 ]] || die "need 2 params: names of 2 epub files to diff"
+
+zip7stat() { 7z l -ba -slt "$(cygpath -w "$1")" ; }
+epub_mask() { perl -pe 's!(?:OPS|OEBPS)([\\/])!EPUB$1!g' ; }  # tr "[:upper:]" "[:lower:]" |
+epub_ls_diffable() { [[ -s "$1" ]] && zip7stat "$1" | epub_mask | 7zl_diffable > "$1.z7stat" && [[ -s "$1.z7stat" ]] ; }
+
+epub_ls_diffable "$1" || die "could not probe $1"
+epub_ls_diffable "$2" || die "could not probe $2"
 diff -u0 "$1.z7stat" "$2.z7stat"
 rm -f "$1.z7stat" "$2.z7stat"
