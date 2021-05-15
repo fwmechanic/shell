@@ -35,10 +35,6 @@ excl_nonebook_files() (
     -iname "*.pdf" -or \
     -iname "*.zip" \) -exec mv {} "$xdnm/" \;  # *.zip: "accompanying code" files
    rmdir "$xdnm" || die "$xdnm is not empty!"  # if nothing left, rmdir will succeed
-   if [[ "$1" ]]; then
-      newnm="$1"
-      find . -type f | while read -r file; do mv "$file" "$newnm.${file##*.}" ; done   # https://stackoverflow.com/a/8489394
-   fi
    )
 
 do1file() (
@@ -54,11 +50,14 @@ do1file() (
    # above is common to various scripts: unzips $1 into a dir of its own name (minus extension) ($sansext)
 
    # purpose: given a typical ebook archive file (zip, rar) extracted into $sansext, delete non-ebook files and rename ebook files $sansext.ext
-
-   (cd "$sansext" && excl_nonebook_files "../$sansext") || die "excl_nonebook_files failed"
+   ( cd "$sansext" && excl_nonebook_files ) || die "excl_nonebook_files failed"
+   # some downloaded archives' files have timestamps newer than "now": touch them
+   ( cd "$sansext" && find . -type f -newer "../$1" -printf 'from the future: %p\n' )
+   ( cd "$sansext" && find . -type f -newer "../$1" -exec touch {} + )
+   # move the files that're left back to cwd
+   ( cd "$sansext" && find . -type f | while read -r file; do mv "$file" "../$sansext.${file##*.}" ; done )  # https://stackoverflow.com/a/8489394
    mv "$1" "$zfdin/" || die "mv $1 $zfdin/ FAILED" # move input file (which might be a zip file) into "done" dir
    rmdir "$sansext" || die "mv did not empty $sansext/"
-
    echo "------------------------------- eb successful -------------------------------"
    )
 
