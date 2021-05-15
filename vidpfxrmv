@@ -19,4 +19,4 @@ ext="${1##*.}"  # ffmpeg behavior DEPENDS ON the DEST FILE EXTENSION you provide
 { set -x 2> /dev/null ; }
 
 # NB: ffmpeg argments are ORDER SENSITIVE!!!  http://www.markbuckler.com/post/cutting-ffmpeg/  (see "All-Frame Seeking")
-"${FFMPEG:-"ffmpeg"}" -hide_banner -y -i "$1" -c copy -ss "$2" "out.$ext"
+"${FFMPEG:-"ffmpeg"}" -hide_banner -y -ss "$2" -i "$1" -c copy "out.$ext"
