@@ -1,0 +1,56 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use English;
+use Getopt::Std;
+use File::Basename;
+use File::Find;
+
+# usage: report1 $(find . -mindepth 2 -maxdepth 2 -type f -iname '#MONTHLY*.txt')
+
+my ($minyr, $minmon) = (2021, 1);
+my ($maxyr, $maxmon) = (2021, 5);
+
+my $months = (($maxyr * 12) + $maxmon)
+           - (($minyr * 12) + $minmon)
+           + 1;  # inclusive
+
+my $allcents = 0;
+
+printf( "Report Interval [%d/%02d..%d/%02d] (%d months)\n", $minyr, $minmon, $maxyr, $maxmon, $months );
+
+for my $fnm ( @ARGV ) {
+   my ($sumcents, $hits) = (0,0);
+   my($billnm) = fileparse($fnm);
+   open my $ifh, '<', $fnm or die "abend cannot open $fnm for reading: $!\n";
+   while (<$ifh>) {
+      chomp;
+      if( m!^\s*billname\s+(\S+)! ) {
+         $billnm = $1;
+         next;
+         }
+      if( my ($dol,$cents) = m!^\s*fixed\-monthly\s+(\d+)\.(\d{2})(?:\s|$)! ) {
+         # print "FM $dol,$cents  over $months months\n";
+         $sumcents = (($dol * 100) + $cents) * $months;
+         $hits = $months;
+         last;
+         }
+      # print "$_\n";
+      if( my ($yr,$mon,$dol,$cents) = m!^\s*\%\~dp0/(\d{4})_?(\d{2})_?\d{2}\S+\s+.*?(\d+)\.(\d{2})(?:\s|$)! ) {
+         if(   ($yr >= $minyr && $mon >= $minmon)
+            && ($yr <= $maxyr && $mon <= $maxmon)
+           ) {
+            # print "$yr,$mon,$dol,$cents\n";
+            $sumcents += (($dol * 100) + $cents);
+            ++$hits;
+            }
+         }
+      }
+   my $moncents = $sumcents / $months;
+   printf( "%2d %-21s %5d.%02d / %d = %5d.%02d\n", $hits, $billnm, $sumcents / 100, $sumcents % 100, $months, $moncents / 100, $moncents % 100 );
+   $allcents += $sumcents;
+   }
+
+my $moncents = $allcents / $months;
+printf( "   %-21s %5d.%02d / %d = %5d.%02d\n", "TOTAL", $allcents / 100, $allcents % 100, $months, $moncents / 100, $moncents % 100 );
