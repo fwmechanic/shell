@@ -1,0 +1,63 @@
+#!/usr/bin/env perl
+
+#
+# stupid little script that formats a track-number prefix just the way I like it:
+# [#.]##-title.ext
+#
+# 20210529 klg wrote
+#
+use strict;
+use warnings;
+use English;
+use Cwd;
+
+use Getopt::Std;
+our ($opt_n,$opt_r,$opt_x);
+getopts( "nrx" ); # -n Noop mode; -r Recurse; -x only modify things that have an eXtension
+
+use File::Find qw( find );
+
+sub newnm { my ($nm) = @_;
+   # since '.' leads ext, trknum+title regex can match with title eq ext, resulting in '.' that leads ext being replaced with '-'
+   my ($fnm,$ext) = $nm =~ m/^(.*)(\.[^.]+)$/;  # to avoid, rmv ext from value that is tested against trknum+title regex ...
+   $fnm = $nm unless $fnm || $opt_x;
+   if( $fnm && $fnm =~ m!^  # $ext &&
+      (?<trknum>
+       (?: \d\. )?  # leading 2. is a flattening of "DISC 2/"; include in trknum
+           \d{2,}   # I've almost never seen a mp3 or flac track that did not have a 2-digit track number...
+      )
+      [-\s.]+       # what we want to replace with a single '-'; could almost be "punct"
+      (?<title> .* )$
+      !x ) {
+      my $newnm = $+{trknum} . '-' . $+{title} . ($ext || '');
+      return $newnm if $newnm ne $nm;
+      }
+   return  # nothing
+   }
+
+sub wanted {  # https://perldoc.perl.org/File::Find#$File::Find::dir-is-the-current-directory-name,
+   my ($root) = @_;  # note coupling of File::Find::var* (and $_) content with no_chdir value!!!
+   # print "$File::Find::name X-X $_\n";
+   $File::Find::prune = 1  # Don't recurse.
+      unless $opt_r || $File::Find::name eq $root;
+   my $dn = $File::Find::dir;
+   my $nm = $_;
+   if( -f $nm ) {  # print "F: $dn/$nm\n";
+      my $newnm = newnm( $nm );
+      if( $newnm ) {
+         if( $opt_n ) {
+            print "mv '$dn/$nm' '$dn/$newnm'\n"
+            }
+         else {
+            print "mv '$dn/$newnm' '$dn/$nm'\n";  # undo/reversing command
+            rename( "$nm", "$newnm" ) or die "renaming $dn/$nm -> $dn/$newnm\n";
+            }
+         }
+      }
+   }
+
+my $root = '.';
+find({
+   wanted   => sub { wanted($root); },
+   no_chdir => 0,
+   }, $root);
