@@ -66,7 +66,7 @@ for my $arg ( @args ) {
    # print "arg=$arg\n";
    if(    -f $arg )  { push( @playablefiles, $arg ); }
    elsif( -d $arg )  { # print "a=$arg\n";
-                       find( \&eachFile, $arg."\\" );
+                       find( \&eachFile, $arg );
                      }
    else              { push( @playablefiles, glob( $arg ) ); }
    }
@@ -89,10 +89,11 @@ sub wr_array { my ($ofnm,$aref) = @_;
    print $ofh "@$aref";
    }
 
-sub write_m3u { my ($destdir,$aref) = @_;
+sub write_m3u { my ($destdir,$aref) = @_; # print "F0=$destdir\n";
    my @results;
+   my $ddre = quotemeta($destdir);
    for my $fnm ( @$aref ) {
-      if( my ($fnm_rel) = $fnm =~ m|^\Q$destdir\E[\\/](.+)$| ) { # print "F1=$fnm_rel\n";
+      if( my ($fnm_rel) = $fnm =~ m|^$ddre[\\/](.+)$| ) { # print "F1=$fnm_rel\n";
          $fnm_rel =~ s!/+!\\!g;  # print "F2=$fnm_rel\n";
          $fnm_rel =~ s!\\+!\\!g; # print "F3=$fnm_rel\n";
          $fnm_rel =~ s!^\.\\!!;  # print "F4=$fnm_rel\n";
