@@ -57,7 +57,7 @@ sub eachFile { # even if this appears nasty, GLOB is NOT a better alternative!
    my $thisDir = $File::Find::dir;
    ++$eachdir{$thisDir}; # we will generate a
    my $file = $File::Find::name;
-   if( $file =~ m!\.(?:mp[34g]|m4a|wmv|flac|f[l4]v)$!i ) { # print "F1=$file\n";
+   if( $file =~ m!\.(?:mp[34g]|m4[ab]|wmv|flac|f[l4]v)$!i ) { # print "F1=$file\n";
       push( @playablefiles, $file );
       }
    }
