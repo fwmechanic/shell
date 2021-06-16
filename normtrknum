@@ -12,8 +12,8 @@ use English;
 use Cwd;
 
 use Getopt::Std;
-our ($opt_n,$opt_r,$opt_x);
-getopts( "nrx" ); # -n Noop mode; -r Recurse; -x only modify things that have an eXtension
+our ($opt_n,$opt_r,$opt_t,$opt_x);
+getopts( "nrtx" ); # -n Noop mode; -r Recurse; -x only modify things that have an eXtension
 
 use File::Find qw( find );
 
@@ -21,18 +21,25 @@ sub newnm { my ($nm) = @_;
    # since '.' leads ext, trknum+title regex can match with title eq ext, resulting in '.' that leads ext being replaced with '-'
    my ($fnm,$ext) = $nm =~ m/^(.*)(\.[^.]+)$/;  # to avoid, rmv ext from value that is tested against trknum+title regex ...
    $fnm = $nm unless $fnm || $opt_x;
-   if( $fnm && $fnm =~ m!^  # $ext &&
+   return unless $fnm;
+   my $origfnm = $fnm;
+   if( $fnm =~ m!^  # $ext &&
       (?<trknum>
        (?: \d\. )?  # leading 2. is a flattening of "DISC 2/"; include in trknum
            \d{2,}   # I've almost never seen a mp3 or flac track that did not have a 2-digit track number...
       )
       [-\s.]+       # what we want to replace with a single '-'; could almost be "punct"
       (?<title> .* )$
-      !x ) {
-      my $newnm = $+{trknum} . '-' . $+{title} . ($ext || '');
-      return $newnm if $newnm ne $nm;
+      !x
+     ) {
+      $fnm = $+{trknum} . '-' . $+{title} . ($ext || '');
       }
-   return  # nothing
+   if( $opt_t ) {  # make title-fixing mods?
+      $fnm =~ s![\s_]\-[\s_]!-!g;
+      $fnm =~ s!_! !g;
+      $fnm =~ s!\s+! !g;
+      }
+   return $fnm if $origfnm ne $fnm;
    }
 
 sub wanted {  # https://perldoc.perl.org/File::Find#$File::Find::dir-is-the-current-directory-name,
