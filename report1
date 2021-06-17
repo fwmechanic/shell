@@ -6,15 +6,24 @@ use English;
 use Getopt::Std;
 use File::Basename;
 use File::Find;
+use Time::Piece;
+use Time::Seconds;
 
 # usage: report1 $(find . -mindepth 2 -maxdepth 2 -type f -iname '#MONTHLY*.txt')
 
-my ($minyr, $minmon) = (2021, 1);
-my ($maxyr, $maxmon) = (2021, 5);
+our ($opt_m);
+getopts( "m:" );
+
+$opt_m //= 5;
+
+my $tmax = localtime;
+my $tmin = $tmax - ($opt_m * ONE_MONTH);  # https://stackoverflow.com/a/17601119
+
+my ($minyr, $minmon) = ($tmin->year, $tmin->mon);
+my ($maxyr, $maxmon) = ($tmax->year, $tmax->mon);
 
 my $months = (($maxyr * 12) + $maxmon)
-           - (($minyr * 12) + $minmon)
-           + 1;  # inclusive
+           - (($minyr * 12) + $minmon);
 
 my $allcents = 0;
 
