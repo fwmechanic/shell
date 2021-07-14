@@ -13,26 +13,25 @@ use Time::Seconds;
 
 our ($opt_m);
 getopts( "m:" );
-
-$opt_m //= 5;
+$opt_m //= 6; # last N full months (i.e. not including current month)
 
 my $tmax = localtime;
-my $tmin = $tmax - ($opt_m * ONE_MONTH);  # https://stackoverflow.com/a/17601119
+   $tmax = $tmax - (      1    * ONE_MONTH);  # https://stackoverflow.com/a/17601119
+my $tmin = $tmax - (($opt_m-1) * ONE_MONTH);  # https://stackoverflow.com/a/17601119
 
-my ($minyr, $minmon) = ($tmin->year, $tmin->mon);
-my ($maxyr, $maxmon) = ($tmax->year, $tmax->mon);
+sub ym_to_st { sprintf "%04d/%02d", $_[0], $_[1]; }
+my $minym = ym_to_st( $tmin->year, $tmin->mon );
+my $maxym = ym_to_st( $tmax->year, $tmax->mon );
 
-my $months = (($maxyr * 12) + $maxmon)
-           - (($minyr * 12) + $minmon);
+print "Report Interval [$minym..$maxym] ($opt_m months)\n";
 
 my $allcents = 0;
-
-printf( "Report Interval [%d/%02d..%d/%02d] (%d months)\n", $minyr, $minmon, $maxyr, $maxmon, $months );
 
 for my $fnm ( @ARGV ) {
    my ($sumcents, $hits) = (0,0);
    my($billnm) = fileparse($fnm);
    open my $ifh, '<', $fnm or die "abend cannot open $fnm for reading: $!\n";
+   # print "$fnm\n";
    while (<$ifh>) {
       chomp;
       if( m!^\s*billname\s+(\S+)! ) {
@@ -40,26 +39,28 @@ for my $fnm ( @ARGV ) {
          next;
          }
       if( my ($dol,$cents) = m!^\s*fixed\-monthly\s+(\d+)\.(\d{2})(?:\s|$)! ) {
-         # print "FM $dol,$cents  over $months months\n";
-         $sumcents = (($dol * 100) + $cents) * $months;
-         $hits = $months;
+         # print "FM $dol,$cents  over $opt_m months\n";
+         $sumcents = (($dol * 100) + $cents) * $opt_m;
+         $hits = $opt_m;
          last;
          }
       # print "$_\n";
       if( my ($yr,$mon,$dol,$cents) = m!^\s*\%\~dp0/(\d{4})_?(\d{2})_?\d{2}\S+\s+.*?(\d+)\.(\d{2})(?:\s|$)! ) {
-         if(   ($yr >= $minyr && $mon >= $minmon)
-            && ($yr <= $maxyr && $mon <= $maxmon)
+         my $ym = ym_to_st( $yr, $mon );
+         # print "$ym: $dol.$cents [$minym..$maxym]\n";
+         if(   ($ym ge $minym)
+            && ($ym le $maxym)
            ) {
-            # print "$yr,$mon,$dol,$cents\n";
+            # print "$ym+ $dol.$cents\n";
             $sumcents += (($dol * 100) + $cents);
             ++$hits;
             }
          }
       }
-   my $moncents = $sumcents / $months;
-   printf( "%2d %-21s %5d.%02d / %d = %5d.%02d\n", $hits, $billnm, $sumcents / 100, $sumcents % 100, $months, $moncents / 100, $moncents % 100 );
+   my $moncents = $sumcents / $opt_m;
+   printf( "%2d %-21s %5d.%02d / %d = %5d.%02d\n", $hits, $billnm, $sumcents / 100, $sumcents % 100, $opt_m, $moncents / 100, $moncents % 100 );
    $allcents += $sumcents;
    }
 
-my $moncents = $allcents / $months;
-printf( "   %-21s %5d.%02d / %d = %5d.%02d\n", "TOTAL", $allcents / 100, $allcents % 100, $months, $moncents / 100, $moncents % 100 );
+my $moncents = $allcents / $opt_m;
+printf( "   %-21s %5d.%02d / %d = %5d.%02d\n", "TOTAL", $allcents / 100, $allcents % 100, $opt_m, $moncents / 100, $moncents % 100 );
