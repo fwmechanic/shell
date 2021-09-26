@@ -11,8 +11,8 @@ use Time::Seconds;
 
 # usage: report1 $(find . -mindepth 2 -maxdepth 2 -type f -iname '#MONTHLY*.txt')
 
-our ($opt_m);
-getopts( "m:" );
+our ($opt_v,$opt_m);
+getopts( "m:v" );
 $opt_m //= 6; # last N full months (i.e. not including current month)
 
 my $tmax = localtime;
@@ -27,34 +27,41 @@ print "Report Interval [$minym..$maxym] ($opt_m months)\n";
 
 my $allcents = 0;
 
-for my $fnm ( @ARGV ) {
+for my $fnm ( @ARGV ) {  # print "$fnm\n";
+   my ($billnm) = fileparse($fnm);
    my ($sumcents, $hits) = (0,0);
-   my($billnm) = fileparse($fnm);
+   my $addmonpymt = sub { my ($yr, $mon, $dol, $cents) = @_;
+      my $ym = ym_to_st( $yr, $mon );
+      if(   ($ym ge $minym)
+         && ($ym le $maxym)
+        ) {  #
+           printf "   %-10s += %s %5i.%02i\n", $billnm, $ym, $dol, $cents if $opt_v;
+         # print "$billnm: $yr.$mon : $dol.$cents\n";
+         $sumcents += (($dol * 100) + $cents);
+         ++$hits;
+         }
+      };
+
    open my $ifh, '<', $fnm or die "abend cannot open $fnm for reading: $!\n";
-   # print "$fnm\n";
    while (<$ifh>) {
       chomp;
       if( m!^\s*billname\s+(\S+)! ) {
          $billnm = $1;
          next;
          }
-      if( my ($dol,$cents) = m!^\s*fixed\-monthly\s+(\d+)\.(\d{2})(?:\s|$)! ) {
-         # print "FM $dol,$cents  over $opt_m months\n";
-         $sumcents = (($dol * 100) + $cents) * $opt_m;
-         $hits = $opt_m;
-         last;
+      if( my ($ymin,$mmin,$ymax,$mmax,$dol,$cents) = m!^\s*fixed\-monthly\s+(\d{4})[._]?(\d{2})\-(\d{4})[._]?(\d{2})\s+(\d+)\.(\d{2})(?:\s|$)! ) {  # print "FM $dol,$cents  over $opt_m months\n";
+         for( my $yr=$ymin; $yr<=$ymax; ++$yr ) {
+            my ($mon,$monmax) = ($yr eq $ymin ? $mmin : "01", $yr eq $ymax ? $mmax : "12" );
+            for( ; $mon<=$monmax; ++$mon ) {
+               $addmonpymt->( $yr, $mon, $dol, $cents );
+               }
+            }
+         next;
          }
       # print "$_\n";
-      if( my ($yr,$mon,$dol,$cents) = m!^\s*\%\~dp0/(\d{4})_?(\d{2})_?\d{2}\S+\s+.*?(\d+)\.(\d{2})(?:\s|$)! ) {
-         my $ym = ym_to_st( $yr, $mon );
-         # print "$ym: $dol.$cents [$minym..$maxym]\n";
-         if(   ($ym ge $minym)
-            && ($ym le $maxym)
-           ) {
-            # print "$ym+ $dol.$cents\n";
-            $sumcents += (($dol * 100) + $cents);
-            ++$hits;
-            }
+      if( my ($yr,$mon,$dol,$cents) = m!^\s*\%\~dp0/(\d{4})[._]?(\d{2})[._]?\d{2}\S+\s+.*?(\d+)\.(\d{2})(?:\s|$)! ) {
+         $addmonpymt->( $yr, $mon, $dol, $cents );
+         next;
          }
       }
    my $moncents = $sumcents / $opt_m;
