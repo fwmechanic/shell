@@ -26,6 +26,7 @@ excl_nonebook_files() (
     -iname "*.png" -or \
     -iname "*.lit" -or \
     -iname "*.fb2" -or \
+    -iname "*.rtf" -or \
     -iname "*.opf" -or \
     -iname "*.DS_Store" \) -delete
    find . -type f ! \( \
