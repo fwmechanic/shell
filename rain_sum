@@ -1,0 +1,25 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+
+# given a directory of jpg files having names matching
+# 'YYYYMMDD_HHMMSS_CCC.jpg'
+# where CCC is the # of cents (hundredths of an inch) depicted in the photo:
+#
+# display the summed values of CCC on a per year and per-month basis
+
+my (%byYr, %byYm);
+
+while( glob("*.jpg") ) {
+   my ($yr,$mon,$cents) = m/^(\d{4})(\d{2})\d{2}_\d{6}_(\d+)\./;
+   if( $cents ) {
+      print "$_\n";
+      $cents = 0 + $cents;
+      $byYr{$yr} += $cents;
+      $byYm{"$yr.$mon"} += $cents;
+      }
+   }
+
+print "\nPer year:\n" ; printf( "  %s %5d\n", $_, $byYr{$_} ) for ( sort keys %byYr );
+print "\nPer month:\n"; printf( "  %s %5d\n", $_, $byYm{$_} ) for ( sort keys %byYm )
