@@ -1,5 +1,4 @@
 #!/usr/bin/perl -w
-# Usage: ./dgrep re
 
 use strict;
 use warnings;
@@ -72,13 +71,19 @@ my $rex = gen_re_match_all_anyorder( @ARGV );
 
 my $dtag = ''; # current diary-entry's date-tag (aka timestamp)
 my @dtxt;      # current diary-entry's text (lines)
+my ($fnmCopy,%fnmsWhit);
 my ($chkDtxtMatch,$chkLnHit);  # methods
+sub fnmPfx {
+   print "$fnmCopy\n" unless exists $fnmsWhit{$fnmCopy};
+   $fnmsWhit{$fnmCopy} = 1;
+   }
 if( $opt_c ) {
    $chkDtxtMatch = sub {  # check if @dtxt matches
       my $all = join ' ', @dtxt;
       # print "ALL: " . $all, "\n";
       if( $all =~ m|$rex|o ) {
          $all =~ s/\W//g;
+         fnmPfx();
          if( $opt_d ) {  print $dtag,                           "\n"; }
          else {          print $dtag, ' ', join( "\n", @dtxt ), "\n"; }
          }
@@ -88,23 +93,26 @@ else {
    $chkLnHit = sub {
       if( m|$rex|o ) {
          s/^\s+|\s+$//g;
+         fnmPfx();
          print "$dtag:$_\n";  # $fnm:$.:
          }
       }
    }
 for my $fnm ( @files ) {
    open my $ifh, '<', $fnm or die "abend cannot open $fnm for reading: $!\n";
+   $fnmCopy = $fnm;  # annoying Perl for variable scoping rule forces this to expose outside loop
+   # print "++++ $fnm\n" unless exists $fnmsWhit{$fnm};
    while (<$ifh>) {
       chomp;
     # my ($dt,$dow) = m/^(\d{8}(?:_\d{4,6})?)(\s+(?:Sunday|Sun|Monday|Mon|Tuesday|Tues|Tue|Wednesday|Wed|Thursday|Thurs|Thu|Thur|Friday|Fri|Saturday|Sat))?/;  # WORKS
       my ($dt,$dow) = m/^(\d{8}(?:_\d{4,6})?)(\s+(?:[SMTWF][unonuesednesdhursriatur]{2,5}day|Sun|Mon|Tues|Tue|Wed|Thurs|Thur|Thu|Fri|Sat)\b)?/;                # WORKS
       if( $dt ) {
-         $chkDtxtMatch->() if $chkDtxtMatch;
+         $chkDtxtMatch->() if $chkDtxtMatch;  # we're about to replace @dtxt; before doing so, check its presumed full accumulation for a match
          $dtag = substr $dt, 0, 8;
          # print $dtag . "\n";
          # print $dow . "#\n" if $dow;
          $_ = substr $_, length($dt) + ($dow ? length($dow) : 0);
-         @dtxt = ( $_ );
+         @dtxt = ( $_ );  # replace @dtxt
          }
       else {
          push( @dtxt, $_ );
