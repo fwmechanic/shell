@@ -35,10 +35,10 @@ sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact fl
    return (($dol * 100) + $cents);
    }
 
-my %section_parsers;
+my (%section_parsers,$minyy);
 
 my $rdt = '\d{2}/\d{2}';
-my $rdesc = '[A-Z].*[A-Z]';
+my $rdesc = '\w.*\w';
 my $rdamtcapt = '\$([\d,.]+\.\d{2})';
 my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b";
 
@@ -48,6 +48,8 @@ sub txn { my ($ctx) = @_;
       ||     m"^$rtxn"
      ) {
       my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, tocents($4));
+      $txpostdt =~ s!/!-!g;  # ISO8660 sep
+      $txpostdt = "$minyy-$txpostdt";
       $txcents = 0 - $txcents if $sign eq '-';
       $txdesc =~ s!\s\s+! # !g;
       printf "$ctx: %s  %7d  %s\n", $txpostdt, $txcents, $txdesc;
@@ -61,8 +63,9 @@ sub chtxns { my ($cardholder) = @_;
    $charges{ $cardholder } += $txcents if $txdesc;
    }
 
-my ($cardholder,%cardtotals);
+my ($cardholder,%cardtotals,$minyy_shown);
 sub chs {
+ # print "chs: minyy = $minyy\n" unless $minyy_shown; $minyy_shown = 1;
  # print "chs: $_\n" if $opt_v;
    if( !$cardholder ) {
       if( /^($rdesc)\s+Card ending in\s+\d{4}/ ) {
@@ -119,8 +122,16 @@ sub updt_section_parsers {
    $section_hdr_re = qr{$reraw};
    }
 
+sub findyr {
+   my ($yr) = m"\b\d{2}/\d{2}/(\d{2})\b";
+   if( $yr ) {
+      $yr += 2000;  # ugh!
+      $minyy = $yr if !$minyy || $minyy > $yr;
+      }
+   }
+
 updt_section_parsers();
-my $lineparser;
+my $lineparser = \&findyr;
 while( <> ) {
    chomp;
    # print "new line = $_\n";
@@ -132,5 +143,5 @@ while( <> ) {
       print "lineparser = $lphdr\n" if $opt_v;
       next;
       }
-   $lineparser->() if $lineparser;
+   $lineparser->();
    }
