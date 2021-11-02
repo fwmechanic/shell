@@ -32,8 +32,7 @@ getopts('vh');
 sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
    $dcstr =~ s/[,]//g;
    my ($dol, $cents) = $dcstr =~ /^(\d+)\.(\d{2})$/;
-   my $sumcents += (($dol * 100) + $cents);
-   return $sumcents;
+   return (($dol * 100) + $cents);
    }
 
 my %section_parsers;
@@ -41,11 +40,12 @@ my %section_parsers;
 my $rdt = '\d{2}/\d{2}';
 my $rdesc = '[A-Z].*[A-Z]';
 my $rdamtcapt = '\$([\d,.]+\.\d{2})';
+my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b";
 
 my %txns;
 sub txn { my ($ctx) = @_;
-   if(   m"^$rdt\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b"
-      ||     m"^\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b"
+   if(   m"^$rdt$rtxn"
+      ||     m"^$rtxn"
      ) {
       my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, tocents($4));
       $txcents = 0 - $txcents if $sign eq '-';
@@ -58,29 +58,26 @@ sub txn { my ($ctx) = @_;
 my %charges;
 sub chtxns { my ($cardholder) = @_;
    my ($txpostdt, $txcents, $txdesc) = txn( $cardholder );
-   if( $txdesc ) {
-      $charges{ $cardholder } += $txcents;
-      }
+   $charges{ $cardholder } += $txcents if $txdesc;
    }
 
 my ($cardholder,%cardtotals);
 sub chs {
-   print "chs: $_\n" if $opt_v;
+ # print "chs: $_\n" if $opt_v;
    if( !$cardholder ) {
       if( /^($rdesc)\s+Card ending in\s+\d{4}/ ) {
          $cardholder = $1;
          print "cardholder = $cardholder\n" if $opt_v;
-         return;
          }
       }
    else {
       my ($cardtotal) = m"^New Charges\s+$rdamtcapt";
       if( $cardtotal ) {
-         print "cardholder = $cardholder; cardtotal = $cardtotal\n";
+       # print "cardholder = $cardholder; cardtotal = $cardtotal\n";
          $cardtotal = tocents( $cardtotal );  # for cross-checking
          print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opt_v;
          $cardtotals{$cardholder} = $cardtotal;
-         my $ch_capt = $cardholder;
+         my $ch_capt = $cardholder;  # required!
          $section_parsers{ $cardholder } = sub { chtxns( $ch_capt ); };
          updt_section_parsers();
          $cardholder = undef;  # we're done with this $cardholder
@@ -88,23 +85,28 @@ sub chs {
       }
    }
 
-sub as { txn('AS'); }
+sub pymts { txn('Payments&refunds'); }
 
 sub fc {
-   for( sort keys %charges ) {
-      printf "charges: %7d %s\n", $charges{$_}, $_;
-      }
    for( sort keys %cardtotals ) {
-      printf "cardtotals: %7d %s\n", $cardtotals{$_}, $_;
+      my ($ct,$chgs) = ($cardtotals{$_},$charges{$_});
+      if( $ct != $chgs ) {
+         printf "**************************************************************************************\n";
+         printf "charges (%7d) != cardtotals (%7d) %-20s DIFFER by %7d !!!\n", $chgs, $ct, $_, $chgs - $ct;
+         printf "**************************************************************************************\n";
+         }
+      else {
+         printf "charges (%7d) == cardtotals (%7d) %-20s same\n", $chgs, $ct, $_;
+         }
       }
 
    print "fc done!\n"; exit(0);
    }
 
 %section_parsers = (
-   'CARDHOLDER SUMMARY' => \&chs,
-   'ACCOUNT SUMMARY'    => \&as,
-   'Fees Charged'       => \&fc,
+   'CARDHOLDER SUMMARY'                => \&chs,
+   'Payments, Credits and Adjustments' => \&pymts,
+   'Fees Charged'                      => \&fc,
    # 'Interest Charged'   => \&ic,
    # '2021 totals year-to-date' => \&tiytd,
    );
@@ -122,14 +124,13 @@ my $lineparser;
 while( <> ) {
    chomp;
    # print "new line = $_\n";
-   if( /$section_hdr_re/ ) {
+   if( m"$section_hdr_re" ) {
       my $lphdr = $1;
-      exists $section_parsers{ $lphdr } or die "$lphdr missing!\n";
+      die "$lphdr missing!\n" unless exists $section_parsers{ $lphdr };
       $lineparser = delete( $section_parsers{ $lphdr } );
       updt_section_parsers();
       print "lineparser = $lphdr\n" if $opt_v;
       next;
       }
-   next unless $lineparser;
-   $lineparser->();
+   $lineparser->() if $lineparser;
    }
