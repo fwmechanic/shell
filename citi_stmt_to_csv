@@ -35,6 +35,10 @@ sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact fl
    return (($dol * 100) + $cents);
    }
 
+sub showtxn { my ($holder,$dt,$txcents,$desc) = @_;
+   printf "%-17s: %s %7d %s\n", $holder,$dt,$txcents,$desc;
+   }
+
 my (%section_parsers,$minyy);
 
 my $rdt = '\d{2}/\d{2}';
@@ -52,8 +56,11 @@ sub txn { my ($ctx) = @_;
       $txpostdt = "$minyy-$txpostdt";
       $txcents = 0 - $txcents if $sign eq '-';
       $txdesc =~ s!\s\s+! # !g;
-      printf "$ctx: %s  %7d  %s\n", $txpostdt, $txcents, $txdesc;
+      showtxn( $ctx,$txpostdt, $txcents, $txdesc );
       return ($txpostdt, $txcents, $txdesc);
+      }
+   if( m"^(No Activity)\b" ) {
+      return ('-', 0, $1);
       }
    }
 
@@ -61,6 +68,7 @@ my %charges;
 sub chtxns { my ($cardholder) = @_;
    my ($txpostdt, $txcents, $txdesc) = txn( $cardholder );
    $charges{ $cardholder } += $txcents if $txdesc;
+   return 0;
    }
 
 my ($cardholder,%cardtotals,$minyy_shown);
@@ -81,29 +89,18 @@ sub chs {
          print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opt_v;
          $cardtotals{$cardholder} = $cardtotal;
          my $ch_capt = $cardholder;  # required!
-         $section_parsers{ $cardholder } = sub { chtxns( $ch_capt ); };
+         $section_parsers{ $cardholder } = sub { return chtxns( $ch_capt ); };
          updt_section_parsers();
          $cardholder = undef;  # we're done with this $cardholder
          }
       }
+   return 0;
    }
 
-sub pymts { txn('Payments&refunds'); }
+sub pymts { txn('credit'); return 0; }
 
 sub fc {
-   for( sort keys %cardtotals ) {
-      my ($ct,$chgs) = ($cardtotals{$_},$charges{$_});
-      if( $ct != $chgs ) {
-         printf "**************************************************************************************\n";
-         printf "charges (%7d) != cardtotals (%7d) %-20s DIFFER by %7d !!!\n", $chgs, $ct, $_, $chgs - $ct;
-         printf "**************************************************************************************\n";
-         }
-      else {
-         printf "charges (%7d) == cardtotals (%7d) %-20s same\n", $chgs, $ct, $_;
-         }
-      }
-
-   print "fc done!\n"; exit(0);
+   return 1;
    }
 
 %section_parsers = (
@@ -128,20 +125,62 @@ sub findyr {
       $yr += 2000;  # ugh!
       $minyy = $yr if !$minyy || $minyy > $yr;
       }
+   return 0;
+   }
+
+sub atstart { my ($ifnm) = @_;
+   # does not produce desired results:
+   # my($ifnmname, $ifnmdirs, $ifnmsuffix) = fileparse($ifnm);
+   # print "$ifnm, $ifnmname, $ifnmdirs, $ifnmsuffix\n";
+   my ($ifnx) = $ifnm =~ m"(.+\.)[^.]+$";
+   my $addltxnfnm = $ifnx . 'addltxns';
+   if( -e $addltxnfnm ) {
+      print "$addltxnfnm\n\n";
+      open my $ifh, '<', $addltxnfnm or die "abend cannot open $addltxnfnm for reading: $!\n";
+      while (my $line = <$ifh>) {
+         chomp $line;
+         if( $line =~ m"\S" ) {
+            my ($holder,$dt,$txcents,$desc) = $line =~ m"^($rdesc):\s+(\d{4}\-\d{2}\-\d{2})\s+(\d+)\s+($rdesc)";
+            die "bad format in $addltxnfnm: $_\n" unless $desc;
+            showtxn( $holder,$dt,$txcents,$desc );
+            $charges{ $holder } += $txcents;
+            }
+         }
+      print "\n";
+      }
+   print "$ifnm\n\n";
+   return $ifnm;
    }
 
 updt_section_parsers();
 my $lineparser = \&findyr;
+my $fnm1;
 while( <> ) {
+   $fnm1 = atstart( $ARGV ) unless $fnm1;
+   $ARGV eq $fnm1 or die "this program can only process one p2t file\n";
    chomp;
    # print "new line = $_\n";
    if( m"$section_hdr_re" ) {
       my $lphdr = $1;
       die "$lphdr missing!\n" unless exists $section_parsers{ $lphdr };
+      print "lineparser = $lphdr\n" if $opt_v;
       $lineparser = delete( $section_parsers{ $lphdr } );
       updt_section_parsers();
-      print "lineparser = $lphdr\n" if $opt_v;
       next;
       }
-   $lineparser->();
+   last if $lineparser->();
+   }
+
+print "\ncross-checking\n\n";
+for( sort keys %cardtotals ) {
+   my ($ct,$chgs) = ($cardtotals{$_},$charges{$_});
+   if( $ct != $chgs ) {
+      printf "**************************************************************************************\n";
+      printf "charges (%7d) != cardtotals (%7d) %-20s DIFFER by %7d !!!\n", $chgs, $ct, $_, $chgs - $ct;
+      printf "**************************************************************************************\n";
+      exit(1);
+      }
+   else {
+      printf "charges (%7d) == cardtotals (%7d) %-20s same\n", $chgs, $ct, $_;
+      }
    }
