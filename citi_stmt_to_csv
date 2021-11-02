@@ -1,0 +1,135 @@
+#!/usr/bin/perl -w
+
+# seeking to convert a Citi credit card PDF statement content to CSV or similar
+# I stumbled across the fact that git-bash includes pdftotext, and
+# that pdftotext's "simple" mode does a very fine job of extracting what I need
+# (in the case perhaps ONLY of this particular CC company's PDF statement)!
+# What's left is to slice and dice the "simple" output.  It's only a bit hacky.
+
+# run on output of `pdftotext -simple citiCreditCardStatement.pdf`
+
+use strict;
+use warnings;
+use English;
+use Getopt::Std;
+use File::Basename;
+
+my($scriptname, $scriptdirs, $scriptsuffix) = fileparse($0);
+
+sub die_w_usage {
+   print STDERR <<"EOT";
+$scriptname: diary-grep
+usage: $scriptname [-h] [-v] [filename]
+  -h   this help
+  -v   verbose
+EOT
+   die "abend\n"
+   }
+
+our ($opt_v,$opt_h);
+getopts('vh');
+
+sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
+   $dcstr =~ s/[,]//g;
+   my ($dol, $cents) = $dcstr =~ /^(\d+)\.(\d{2})$/;
+   my $sumcents += (($dol * 100) + $cents);
+   return $sumcents;
+   }
+
+my %section_parsers;
+
+my $rdt = '\d{2}/\d{2}';
+my $rdesc = '[A-Z].*[A-Z]';
+my $rdamtcapt = '\$([\d,.]+\.\d{2})';
+
+my %txns;
+sub txn { my ($ctx) = @_;
+   if(   m"^$rdt\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b"
+      ||     m"^\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b"
+     ) {
+      my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, tocents($4));
+      $txcents = 0 - $txcents if $sign eq '-';
+      $txdesc =~ s!\s\s+! # !g;
+      printf "$ctx: %s  %7d  %s\n", $txpostdt, $txcents, $txdesc;
+      return ($txpostdt, $txcents, $txdesc);
+      }
+   }
+
+my %charges;
+sub chtxns { my ($cardholder) = @_;
+   my ($txpostdt, $txcents, $txdesc) = txn( $cardholder );
+   if( $txdesc ) {
+      $charges{ $cardholder } += $txcents;
+      }
+   }
+
+my ($cardholder,%cardtotals);
+sub chs {
+   print "chs: $_\n" if $opt_v;
+   if( !$cardholder ) {
+      if( /^($rdesc)\s+Card ending in\s+\d{4}/ ) {
+         $cardholder = $1;
+         print "cardholder = $cardholder\n" if $opt_v;
+         return;
+         }
+      }
+   else {
+      my ($cardtotal) = m"^New Charges\s+$rdamtcapt";
+      if( $cardtotal ) {
+         print "cardholder = $cardholder; cardtotal = $cardtotal\n";
+         $cardtotal = tocents( $cardtotal );  # for cross-checking
+         print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opt_v;
+         $cardtotals{$cardholder} = $cardtotal;
+         my $ch_capt = $cardholder;
+         $section_parsers{ $cardholder } = sub { chtxns( $ch_capt ); };
+         updt_section_parsers();
+         $cardholder = undef;  # we're done with this $cardholder
+         }
+      }
+   }
+
+sub as { txn('AS'); }
+
+sub fc {
+   for( sort keys %charges ) {
+      printf "charges: %7d %s\n", $charges{$_}, $_;
+      }
+   for( sort keys %cardtotals ) {
+      printf "cardtotals: %7d %s\n", $cardtotals{$_}, $_;
+      }
+
+   print "fc done!\n"; exit(0);
+   }
+
+%section_parsers = (
+   'CARDHOLDER SUMMARY' => \&chs,
+   'ACCOUNT SUMMARY'    => \&as,
+   'Fees Charged'       => \&fc,
+   # 'Interest Charged'   => \&ic,
+   # '2021 totals year-to-date' => \&tiytd,
+   );
+
+my $section_hdr_re;
+sub updt_section_parsers {
+   my $reraw = '(?!)';  # never matches  https://stackoverflow.com/a/4589566
+      $reraw = '^(' . join( '|', sort keys %section_parsers ) . ')\b' if %section_parsers;
+   print "updt_section_parsers = $reraw\n" if $opt_v;
+   $section_hdr_re = qr{$reraw};
+   }
+
+updt_section_parsers();
+my $lineparser;
+while( <> ) {
+   chomp;
+   # print "new line = $_\n";
+   if( /$section_hdr_re/ ) {
+      my $lphdr = $1;
+      exists $section_parsers{ $lphdr } or die "$lphdr missing!\n";
+      $lineparser = delete( $section_parsers{ $lphdr } );
+      updt_section_parsers();
+      print "lineparser = $lphdr\n" if $opt_v;
+      next;
+      }
+   next unless $lineparser;
+   $lineparser->();
+   }
