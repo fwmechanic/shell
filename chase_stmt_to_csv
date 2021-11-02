@@ -31,82 +31,55 @@ getopts('vh');
 
 sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
    $dcstr =~ s/[,]//g;
-   my ($dol, $cents) = $dcstr =~ /^(\d+)\.(\d{2})$/;
-   return (($dol * 100) + $cents);
+   my ($dol, $cents) = $dcstr =~ /^(\d*)\.(\d{2})$/;
+   return ((($dol || 0) * 100) + $cents);
    }
 
 sub showtxn { my ($holder,$dt,$txcents,$desc) = @_;
    printf "%-17s: %s %7d %s\n", $holder,$dt,$txcents,$desc;
    }
 
-my (%section_parsers,$minyy);
+my (%section_parsers,$minyy,$maxyy,$acctnum,$purchtotal);
 
 my $rdt = '\d{2}/\d{2}';
 my $rdesc = '\w.*\w';
-my $rdamtcapt = '\$([\d,.]+\.\d{2})';
+my $rdamtcapt = '([\d,.]*\.\d{2})';
 my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b";
 
 my %txns;
 sub txn { my ($ctx) = @_;
-   if(   m"^$rdt$rtxn"
-      ||     m"^$rtxn"
-     ) {
+   if( m"^$rtxn" ) {
       my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, tocents($4));
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
-      $txpostdt = "$minyy-$txpostdt";
+      $txpostdt = (($maxyy && $txpostdt =~ m"01") ? $maxyy : $minyy) . "-$txpostdt";
       $txcents = 0 - $txcents if $sign eq '-';
       $txdesc =~ s!\s\s+! # !g;
       showtxn( $ctx,$txpostdt, $txcents, $txdesc );
       return ($txpostdt, $txcents, $txdesc);
       }
-   if( m"^(No Activity)\b" ) {
-      return ('-', 0, $1);
-      }
    }
 
-my %charges;
-sub lp_chtxns { my ($cardholder) = @_;
+sub add_txn { my ($cardholder,$sref_accum) = @_;
    my ($txpostdt, $txcents, $txdesc) = txn( $cardholder );
-   $charges{ $cardholder } += $txcents if $txdesc;
+   $$sref_accum += $txcents if $txdesc;
    return 0;
    }
 
-my ($cardholder,%cardtotals,$minyy_shown);
-sub lp_chs {
- # print "chs: minyy = $minyy\n" unless $minyy_shown; $minyy_shown = 1;
- # print "chs: $_\n" if $opt_v;
-   if( !$cardholder ) {
-      if( /^($rdesc)\s+Card ending in\s+\d{4}/ ) {
-         $cardholder = $1;
-         print "cardholder = $cardholder\n" if $opt_v;
-         }
-      }
-   else {
-      my ($cardtotal) = m"^New Charges\s+$rdamtcapt";
-      if( $cardtotal ) {
-       # print "cardholder = $cardholder; cardtotal = $cardtotal\n";
-         $cardtotal = tocents( $cardtotal );  # for cross-checking
-         print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opt_v;
-         $cardtotals{$cardholder} = $cardtotal;
-         my $ch_capt = $cardholder;  # required!
-         $section_parsers{ $cardholder } = sub { return lp_chtxns( $ch_capt ); };
-         updt_section_parsers();
-         $cardholder = undef;  # we're done with this $cardholder
-         }
-      }
-   return 0;
-   }
+my ($charges,$pymts);
+sub lp_pymts   { add_txn('credit'  , \$pymts   ); return 0; }
+sub lp_charges { add_txn('purchase', \$charges ); return 0; }
 
-sub lp_pymts { txn('credit'); return 0; }
-
-sub lp_fc {
+sub lp_done {
    return 1;
    }
 
 %section_parsers = (
-   'CARDHOLDER SUMMARY'                => \&lp_chs,
-   'Payments, Credits and Adjustments' => \&lp_pymts,
-   'Fees Charged'                      => \&lp_fc,
+   'PAYMENTS'      => \&lp_pymts,
+   'PURCHASE'      => \&lp_charges,
+   'PURCHASES AND REDEMPTIONS' => \&lp_done,
+   'FEES' => \&lp_done,
+   'RETURNS' => \&lp_done,
+   # 'Fees Charged'  => \&lp_done,
    # 'Interest Charged'   => \&ic,
    # '2021 totals year-to-date' => \&tiytd,
    );
@@ -114,17 +87,30 @@ sub lp_fc {
 my $section_hdr_re;
 sub updt_section_parsers {
    my $reraw = '(?!)';  # never matches  https://stackoverflow.com/a/4589566
-      $reraw = '^(' . join( '|', sort keys %section_parsers ) . ')\b' if %section_parsers;
+      $reraw = '^\s*(' . join( '|', sort keys %section_parsers ) . ')\b' if %section_parsers;
    print "updt_section_parsers = $reraw\n" if $opt_v;
    $section_hdr_re = qr{$reraw};
    }
 
-sub lp_findyr {
-   my ($yr) = m"\b\d{2}/\d{2}/(\d{2})\b";
-   if( $yr ) {
-      $yr += 2000;  # ugh!
-      $minyy = $yr if !$minyy || $minyy > $yr;
+sub lp_misc_hdr {
+   # print "lp_misc_hdr $_\n";
+   my ($anum) = m"^\s*Account Number:\s+\d{4} \d{4} \d{4} (\d{4})\b";
+   if( $anum ) {  print "lp_misc_hdr+ anum $anum\n";
+      $acctnum = $anum;
+      return 0;
       }
+   my ($ptot) = m"^\s*Purchases\s+\+\$([\d,]+\.\d{2})";
+   if( $ptot ) {  print "lp_misc_hdr+ ptot $ptot\n";
+      $purchtotal = tocents($ptot);
+      return 0;
+      }
+   my ($miny,$maxy) = m"^\s*Opening/Closing Date\s+\d{2}/\d{2}/(\d{2})\s+\-\s+\d{2}/\d{2}/(\d{2})";
+   if( $maxy ) {  print "lp_misc_hdr+ miny $miny\n";
+      $minyy = $miny + 2000;
+      $maxyy = $maxy + 2000 if $miny ne $maxy;
+      return 0;
+      }
+   # print "lp_misc_hdr $_\n";
    return 0;
    }
 
@@ -143,7 +129,7 @@ sub atstart { my ($ifnm) = @_;
             my ($holder,$dt,$txcents,$desc) = $line =~ m"^($rdesc):\s+(\d{4}\-\d{2}\-\d{2})\s+(\d+)\s+($rdesc)";
             die "bad format in $addltxnfnm: $_\n" unless $desc;
             showtxn( $holder,$dt,$txcents,$desc );
-            $charges{ $holder } += $txcents;
+            $charges += $txcents;
             }
          }
       print "\n";
@@ -153,7 +139,7 @@ sub atstart { my ($ifnm) = @_;
    }
 
 updt_section_parsers();
-my $lineparser = \&lp_findyr;
+my $lineparser = \&lp_misc_hdr;
 my $fnm1;
 while( <> ) {
    $fnm1 = atstart( $ARGV ) unless $fnm1;
@@ -172,15 +158,13 @@ while( <> ) {
    }
 
 print "\ncross-checking\n\n";
-for( sort keys %cardtotals ) {
-   my ($ct,$chgs) = ($cardtotals{$_},$charges{$_});
-   if( $ct != $chgs ) {
-      printf "**************************************************************************************\n";
-      printf "charges (%7d) != cardtotals (%7d) %-20s DIFFER by %7d !!!\n", $chgs, $ct, $_, $chgs - $ct;
-      printf "**************************************************************************************\n";
-      exit(1);
-      }
-   else {
-      printf "charges (%7d) == cardtotals (%7d) %-20s same\n", $chgs, $ct, $_;
-      }
+
+if( $charges != $purchtotal ) {
+   printf "**************************************************************************************\n";
+   printf "charges (%7d) != cardtotals (%7d) DIFFER by %7d !!!\n", $charges, $purchtotal, $charges - $purchtotal;
+   printf "**************************************************************************************\n";
+   exit(1);
+   }
+else {
+   printf "charges (%7d) == cardtotals (%7d) same\n", $charges, $purchtotal;
    }
