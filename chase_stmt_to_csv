@@ -12,14 +12,20 @@ use strict;
 use warnings;
 use English;
 use Getopt::Std;
-use File::Basename;
 
-my($scriptname, $scriptdirs, $scriptsuffix) = fileparse($0);
+use Cwd ();  # from https://metacpan.org/pod/lib::relative#SYNOPSIS
+use File::Basename ();
+use File::Spec ();
+use lib File::Spec->catdir(File::Basename::dirname(Cwd::abs_path __FILE__), '.');
+
+use MyMods::StmtToCsv;
+
+my($scriptname, $scriptdirs, $scriptsuffix) = File::Basename::fileparse($0);
 
 sub die_w_usage {
    print STDERR <<"EOT";
-$scriptname: diary-grep
-usage: $scriptname [-h] [-v] [filename]
+$scriptname: convert Credit Card PDF statement to structured text (CSV)
+usage: $scriptname [-h] [-v] [inputfilename]
   -h   this help
   -v   verbose
 EOT
@@ -28,16 +34,6 @@ EOT
 
 our ($opt_v,$opt_h);
 getopts('vh');
-
-sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
-   $dcstr =~ s/[,]//g;
-   my ($dol, $cents) = $dcstr =~ /^(\d*)\.(\d{2})$/;
-   return ((($dol || 0) * 100) + $cents);
-   }
-
-sub showtxn { my ($holder,$dt,$txcents,$desc) = @_;
-   printf "%-17s: %s %7d %s\n", $holder,$dt,$txcents,$desc;
-   }
 
 my (%section_parsers,$minyy,$maxyy,$acctnum,$purchtotal);
 
@@ -49,12 +45,12 @@ my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b";
 my %txns;
 sub txn { my ($ctx) = @_;
    if( m"^$rtxn" ) {
-      my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, tocents($4));
+      my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, MyMods::StmtToCsv::tocents($4));
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
       $txpostdt = (($maxyy && $txpostdt =~ m"01") ? $maxyy : $minyy) . "-$txpostdt";
       $txcents = 0 - $txcents if $sign eq '-';
       $txdesc =~ s!\s\s+! # !g;
-      showtxn( $ctx,$txpostdt, $txcents, $txdesc );
+      MyMods::StmtToCsv::showtxn( $ctx,$txpostdt, $txcents, $txdesc );
       return ($txpostdt, $txcents, $txdesc);
       }
    }
@@ -102,7 +98,7 @@ sub lp_misc_hdr {
       }
    my ($ptot) = m"^\s*Purchases\s+\+\$([\d,]+\.\d{2})";
    if( $ptot ) {  print "lp_misc_hdr+ ptot $ptot\n";
-      $purchtotal = tocents($ptot);
+      $purchtotal = MyMods::StmtToCsv::tocents($ptot);
       return 0;
       }
    my ($miny,$maxy) = m"^\s*Opening/Closing Date\s+\d{2}/\d{2}/(\d{2})\s+\-\s+\d{2}/\d{2}/(\d{2})";
@@ -129,7 +125,7 @@ sub atstart { my ($ifnm) = @_;
          if( $line =~ m"\S" ) {
             my ($holder,$dt,$txcents,$desc) = $line =~ m"^($rdesc):\s+(\d{4}\-\d{2}\-\d{2})\s+(\d+)\s+($rdesc)";
             die "bad format in $addltxnfnm: $_\n" unless $desc;
-            showtxn( $holder,$dt,$txcents,$desc );
+            MyMods::StmtToCsv::showtxn( $holder,$dt,$txcents,$desc );
             $charges += $txcents;
             }
          }
@@ -162,10 +158,10 @@ print "\ncross-checking\n\n";
 
 if( $charges != $purchtotal ) {
    printf "**************************************************************************************\n";
-   printf "charges (%7d) != cardtotals (%7d) DIFFER by %7d !!!\n", $charges, $purchtotal, $charges - $purchtotal;
+   printf "charges (%s) != cardtotals (%s) DIFFER by %s !!!\n", MyMods::StmtToCsv::cents_to_dc($charges), MyMods::StmtToCsv::cents_to_dc($purchtotal), MyMods::StmtToCsv::cents_to_dc($charges - $purchtotal);
    printf "**************************************************************************************\n";
    exit(1);
    }
 else {
-   printf "charges (%7d) == cardtotals (%7d) same\n", $charges, $purchtotal;
+   printf "charges (%s) == cardtotals (%s) same\n", MyMods::StmtToCsv::cents_to_dc($charges), MyMods::StmtToCsv::cents_to_dc($purchtotal);
    }
