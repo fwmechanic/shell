@@ -65,7 +65,7 @@ sub add_txn { my ($cardholder,$sref_accum) = @_;
    return 0;
    }
 
-my ($charges,$pymts);
+my ($charges,$pymts) = (0,0);
 sub lp_pymts   { add_txn('credit'  , \$pymts   ); return 0; }
 sub lp_charges { add_txn('purchase', \$charges ); return 0; }
 
@@ -94,6 +94,7 @@ sub updt_section_parsers {
 
 sub lp_misc_hdr {
    # print "lp_misc_hdr $_\n";
+   s/(\w)`(\w)/$1$2/;  # VERY strange translation issue
    my ($anum) = m"^\s*Account Number:\s+\d{4} \d{4} \d{4} (\d{4})\b";
    if( $anum ) {  print "lp_misc_hdr+ anum $anum\n";
       $acctnum = $anum;
