@@ -39,8 +39,8 @@ my (%section_parsers,$minyy);
 
 my $rdt = '\d{2}/\d{2}';
 my $rdesc = '\w.*\w';
-my $rdamtcapt = '\$([\d,.]+\.\d{2})';
-my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b";
+my $rdamtcapt = '([\d,]*\.\d{2})';
+my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)\$$rdamtcapt\b";
 
 my %txns;
 sub txn { my ($ctx) = @_;
@@ -78,7 +78,7 @@ sub lp_chs {
          }
       }
    else {
-      my ($cardtotal) = m"^New Charges\s+$rdamtcapt";
+      my ($cardtotal) = m"^New Charges\s+\$$rdamtcapt";
       if( $cardtotal ) {
        # print "cardholder = $cardholder; cardtotal = $cardtotal\n";
          $cardtotal = MyMods::StmtToCsv::tocents( $cardtotal );  # for cross-checking
@@ -168,6 +168,8 @@ while( <> ) {
    }
 
 print "\ncross-checking\n\n";
+%cardtotals or die "no cardtotals to check!\n";
+%charges    or die "no %charges to check!\n";
 for( sort keys %cardtotals ) {
    my ($ct,$chgs) = ($cardtotals{$_},$charges{$_});
    if( $ct != $chgs ) {
