@@ -17,9 +17,9 @@ use warnings;
 my @chapters;
 
 while( <> ) {
-   if( my($hr,$min,$sec,$title) = m"^\s*(\d+):(\d{2}):(\d{2})\s+(\S.*\S)\s*$" ) {
+   if( my($hr,$min,$sec,$title) = m"^\s*(\d+):(\d{2}):(\d{2}(?:\.\d{1,3})?)\s+(\S.*\S)\s*$" ) {
       $sec += ((($hr * 60) + $min) * 60);
-      push @chapters, { title => $title, start => $sec * 1000 };
+      push @chapters, { title => $title, start => int($sec * 1000) };
       }
    }
 uc($chapters[@chapters-1]->{title}) eq 'END' or die "last chapter must be named 'END', w/start time == video duration\n";
