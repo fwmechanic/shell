@@ -1,0 +1,37 @@
+#!/usr/bin/perl
+
+# Perl translation of https://ikyle.me/blog/2020/add-mp4-chapters-ffmpeg
+#
+# # create e.g. chapters.txt file having format
+# #   h:mm:ss track name # h:mm:ss is the start time within INPUT.mp4 of the track
+# #                      # append final line:
+# #   h:mm:ss END        # whose h:mm:ss is the duration of INPUT.mp4)
+# ffmpg_gen_chapter_data chapters.txt > chapters.ffm  # run this program
+# ffmpeg -i INPUT.mp4 -f ffmetadata FFMETADATAFILE
+# cat FFMETADATAFILE chapters.ffm > newffm
+# ffmpeg -i INPUT.mp4 -i newffm -map_metadata 1 -codec copy OUTPUT.mp4
+
+use strict;
+use warnings;
+
+my @chapters;
+
+while( <> ) {
+   if( my($hr,$min,$sec,$title) = m"^\s*(\d+):(\d{2}):(\d{2})\s+(\S.*\S)\s*$" ) {
+      $sec += ((($hr * 60) + $min) * 60);
+      push @chapters, { title => $title, start => $sec * 1000 };
+      }
+   }
+uc($chapters[@chapters-1]->{title}) eq 'END' or die "last chapter must be named 'END', w/start time == video duration\n";
+
+for( my $ix=0; $ix < @chapters - 1; ++$ix ) {
+   my $hr = $chapters[$ix];
+   my $end = $chapters[$ix+1]->{start} - 1;
+   print <<"ENDX";  # NB! _ORDER_ of the following k=v entries IS SIGNIFICANT (it's ffmpeg after all...)
+[CHAPTER]
+TIMEBASE=1/1000
+START=$hr->{start}
+END=$end
+title=$hr->{title}
+ENDX
+   }
