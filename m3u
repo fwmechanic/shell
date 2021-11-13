@@ -44,6 +44,8 @@ our ($opt_n,$opt_r,$opt_s);
 getopts( "n:rs" );
 
 my $startDir = cwd(); # print "startDir=$startDir\n";
+my $startDirRe = '^' . quotemeta($startDir) . '/';
+
 my @playablefiles;
 my $m3u_filename = $opt_n || ($opt_r or scalar @ARGV) && "playlist.m3u" || "00.m3u";
 
@@ -52,12 +54,25 @@ my $m3u_filename = $opt_n || ($opt_r or scalar @ARGV) && "playlist.m3u" || "00.m
 my @args = @ARGV;
    @args = ($startDir) unless @args;
 
+my @renames;
 my %eachdir;
 sub eachFile { # even if this appears nasty, GLOB is NOT a better alternative!
    my $thisDir = $File::Find::dir;
-   ++$eachdir{$thisDir}; # we will generate a
+   ++$eachdir{$thisDir}; # we will generate a m3u file in eachdir PROVIDED it or any of its child dirs contain @playablefiles
    my $file = $File::Find::name;
-   if( $file =~ m!\.(?:mp[34g]|m4[ab]|wmv|flac|f[l4]v)$!i ) { # print "F1=$file\n";
+   if( m!\.(?:mp[34g]|m4[ab]|wmv|flac|f[l4]v)$!i ) { # print "F1=$file\n";
+      my $nmsq = $_ =~ s!\s*\-\s*!-!gr;              # print "F1nmsq=$nmsq\n";
+      if( my ($tnum,$tnam) = $nmsq =~ m!(^(?:\d+\.)?\d+)[-\s\.]+([^-\.\s].*)$! ) {
+         my $newfnm = "$tnum-$tnam";
+         if( $newfnm ne $_ ) {
+            my $newfnmFull = "$thisDir/$newfnm";
+            my $newfnmSd = $newfnmFull =~ s!$startDirRe!!r;
+            my $fileSd   = $file       =~ s!$startDirRe!!r;
+            # print "rename\n'$fileSd'\n'$newfnmSd'\n";
+            push @renames, [ $fileSd, $newfnmSd ];
+            $file = $newfnmFull;
+            }
+         }
       push( @playablefiles, $file );
       }
    }
@@ -69,6 +84,11 @@ for my $arg ( @args ) {
                        find( \&eachFile, $arg );
                      }
    else              { push( @playablefiles, glob( $arg ) ); }
+   }
+for my $ar ( @renames ) {
+   my($fileSd, $newfnmSd) = @$ar;
+   print "mv\n  '$fileSd'\n  '$newfnmSd'\n";
+   rename $fileSd, $newfnmSd or die "rename of $fileSd -> $newfnmSd FAILED\n";
    }
 if( 0 == scalar keys %eachdir ) {
    ++$eachdir{$startDir}
