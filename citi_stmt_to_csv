@@ -41,15 +41,13 @@ my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)\$$rdamtcapt\b";
 
 my %txns;
 sub txn { my ($ctx) = @_;
-   if(   m"^$rdt$rtxn"
-      ||     m"^$rtxn"
-     ) {
+   if( m"^(?:$rdt)?$rtxn" ) {
       my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, MyMods::StmtToCsv::tocents($4));
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
       $txpostdt = "$minyy-$txpostdt";
       $txcents = 0 - $txcents if $sign eq '-';
       $txdesc =~ s!\s\s+! # !g;
-      MyMods::StmtToCsv::showtxn( $ctx,$txpostdt, $txcents, $txdesc );
+      MyMods::StmtToCsv::showtxn( $ctx, $txpostdt, $txcents, $txdesc );
       return ($txpostdt, $txcents, $txdesc);
       }
    if( m"^(No Activity)\b" ) {
@@ -130,7 +128,7 @@ sub atstart { my ($ifnm) = @_;
          if( $line =~ m"\S" ) {
             my ($holder,$dt,$txcents,$desc) = $line =~ m"^($rdesc):\s+(\d{4}\-\d{2}\-\d{2})\s+(\d+)\s+($rdesc)";
             die "bad format in $addltxnfnm: $_\n" unless $desc;
-            MyMods::StmtToCsv::showtxn( $holder,$dt,$txcents,$desc );
+            MyMods::StmtToCsv::showtxn( $holder, $dt, $txcents, $desc );
             $charges{ $holder } += $txcents;
             }
          }
