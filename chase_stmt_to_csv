@@ -32,7 +32,7 @@ EOT
 our ($opt_v,$opt_h);
 getopts('vh');
 
-my (%section_parsers,$minyy,$maxyy,$acctnum,$purchtotal);
+my ($yrMin,$yrMax,$acctnum,$pymttotal,$purchtotal);
 
 my $rdt = '\d{2}/\d{2}';
 my $rdesc = '\w.*\w';
@@ -44,7 +44,7 @@ sub txn { my ($ctx) = @_;
    if( m"^$rtxn" ) {
       my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, MyMods::StmtToCsv::tocents($4));
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
-      $txpostdt = (($maxyy && $txpostdt =~ m"01") ? $maxyy : $minyy) . "-$txpostdt";
+      $txpostdt = (($yrMax && $txpostdt =~ m"^01") ? $yrMax : $yrMin) . "-$txpostdt";  # prepend year
       $txcents = 0 - $txcents if $sign eq '-';
       $txdesc =~ s!\s\s+! # !g;
       MyMods::StmtToCsv::showtxn( $ctx,$txpostdt, $txcents, $txdesc );
@@ -66,12 +66,13 @@ sub lp_done {
    return 1;
    }
 
-%section_parsers = (
-   'PAYMENTS'      => \&lp_pymts,
-   'PURCHASE'      => \&lp_charges,
-   'PURCHASES AND REDEMPTIONS' => \&lp_done,
-   'FEES' => \&lp_done,
-   'RETURNS' => \&lp_done,
+my %section_parsers = (
+   'ACCOUNT\s+SUMMARY'                => \&lp_AcctSummary,
+   'PAYMENTS\s+AND\s+OTHER\s+CREDITS' => \&lp_pymts,
+   'PURCHASE'                         => \&lp_charges,
+   'PURCHASES\s+AND\s+REDEMPTIONS'    => \&lp_done,
+   'FEES'                             => \&lp_done,
+   'RETURNS'                          => \&lp_done,
    # 'Fees Charged'  => \&lp_done,
    # 'Interest Charged'   => \&ic,
    # '2021 totals year-to-date' => \&tiytd,
@@ -85,26 +86,26 @@ sub updt_section_parsers {
    $section_hdr_re = qr{$reraw};
    }
 
-sub lp_misc_hdr {
-   # print "lp_misc_hdr $_\n";
+sub lp_AcctSummary {  # print "lp_AcctSummary $_\n";
    s/(\w)`(\w)/$1$2/;  # VERY strange translation issue
-   my ($anum) = m"^\s*Account Number:\s+\d{4} \d{4} \d{4} (\d{4})\b";
-   if( $anum ) {  print "lp_misc_hdr+ anum $anum\n";
-      $acctnum = $anum;
+   if( m"^\s*Account Number:\s+\d{4} \d{4} \d{4} (\d{4})\b" ) {  print "acctnum $1\n";
+      $acctnum = $1;
       return 0;
       }
-   my ($ptot) = m"^\s*Purchases\s+\+\$([\d,]+\.\d{2})";
-   if( $ptot ) {  print "lp_misc_hdr+ ptot $ptot\n";
-      $purchtotal = MyMods::StmtToCsv::tocents($ptot);
+   if( m"^\s*Payment,\s+Credits\s+(?:\-)?\$([\d,]+\.\d{2})" ) { print  "pymttot raw $1\n";
+      $pymttotal = - MyMods::StmtToCsv::tocents($1);            printf "pymttot %s\n", MyMods::StmtToCsv::cents_to_dc($pymttotal);
       return 0;
       }
-   my ($miny,$maxy) = m"^\s*Opening/Closing Date\s+\d{2}/\d{2}/(\d{2})\s+\-\s+\d{2}/\d{2}/(\d{2})";
-   if( $maxy ) {  print "lp_misc_hdr+ miny $miny\n";
-      $minyy = $miny + 2000;
-      $maxyy = $maxy + 2000 if $miny ne $maxy;
+   if( m"^\s*Purchases\s+(?:\+)?\$([\d,]+\.\d{2})" ) {  print  "purchtot raw $1\n";
+      $purchtotal = MyMods::StmtToCsv::tocents($1);     printf "purchtot %s\n", MyMods::StmtToCsv::cents_to_dc($purchtotal);
       return 0;
       }
-   # print "lp_misc_hdr $_\n";
+   if( m"^\s*Opening/Closing Date\s+\d{2}/\d{2}/(\d{2})\s+\-\s+\d{2}/\d{2}/(\d{2})" ) { print "yrMin/yrMax raw $1/$2\n";
+      $yrMin = $1 + 2000;                 print "yrMin $yrMin\n";
+      $yrMax = $2 + 2000 if $1 ne $2;     print "yrMax $yrMax\n" if $yrMax;
+      return 0;
+      }
+   # print "lp_AcctSummary $_\n";
    return 0;
    }
 
@@ -133,7 +134,7 @@ sub atstart { my ($ifnm) = @_;
    }
 
 updt_section_parsers();
-my $lineparser = \&lp_misc_hdr;
+my $lineparser;
 my $fnm1;
 while( <> ) {
    $fnm1 = atstart( $ARGV ) unless $fnm1;
@@ -141,24 +142,17 @@ while( <> ) {
    chomp;
    # print "new line = $_\n";
    if( m"$section_hdr_re" ) {
-      my $lphdr = $1;
+      my $lphdr = $1 =~ s!\s+!\\s+!gr;
       die "$lphdr missing!\n" unless exists $section_parsers{ $lphdr };
       print "lineparser = $lphdr\n" if $opt_v;
       $lineparser = delete( $section_parsers{ $lphdr } );
       updt_section_parsers();
       next;
       }
-   last if $lineparser->();
+   last if $lineparser and $lineparser->();
    }
 
 print "\ncross-checking\n\n";
 
-if( $charges != $purchtotal ) {
-   printf "**************************************************************************************\n";
-   printf "charges (%s) != cardtotals (%s) DIFFER by %s !!!\n", MyMods::StmtToCsv::cents_to_dc($charges), MyMods::StmtToCsv::cents_to_dc($purchtotal), MyMods::StmtToCsv::cents_to_dc($charges - $purchtotal);
-   printf "**************************************************************************************\n";
-   exit(1);
-   }
-else {
-   printf "charges (%s) == cardtotals (%s) same\n", MyMods::StmtToCsv::cents_to_dc($charges), MyMods::StmtToCsv::cents_to_dc($purchtotal);
-   }
+MyMods::StmtToCsv::cross_chk_totals( $purchtotal, $charges, "charges"  );
+MyMods::StmtToCsv::cross_chk_totals( $pymttotal , $pymts  , "payments" );

@@ -168,14 +168,5 @@ print "\ncross-checking\n\n";
 %cardtotals or die "no cardtotals to check!\n";
 %charges    or die "no %charges to check!\n";
 for( sort keys %cardtotals ) {
-   my ($ct,$chgs) = ($cardtotals{$_},$charges{$_});
-   if( $ct != $chgs ) {
-      printf "**************************************************************************************\n";
-      printf "charges (%s) != cardtotals (%s) %-20s DIFFER by %s !!!\n", MyMods::StmtToCsv::cents_to_dc($chgs), MyMods::StmtToCsv::cents_to_dc($ct), $_, MyMods::StmtToCsv::cents_to_dc($chgs - $ct);
-      printf "**************************************************************************************\n";
-      exit(1);
-      }
-   else {
-      printf "charges (%s) == cardtotals (%s) %-20s same\n", MyMods::StmtToCsv::cents_to_dc($chgs), MyMods::StmtToCsv::cents_to_dc($ct), $_;
-      }
+   MyMods::StmtToCsv::cross_chk_totals( $cardtotals{$_}, $charges{$_}, sprintf( "charges %-20s", $_ ) );
    }
