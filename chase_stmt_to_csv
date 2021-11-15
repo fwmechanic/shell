@@ -1,23 +1,20 @@
 #!/usr/bin/perl -w
 
-# seeking to convert a Citi credit card PDF statement content to CSV or similar
+# seeking to convert a credit card PDF statement content to CSV or similar
 # I stumbled across the fact that git-bash includes pdftotext, and
 # that pdftotext's "simple" mode does a very fine job of extracting what I need
 # (in the case perhaps ONLY of this particular CC company's PDF statement)!
 # What's left is to slice and dice the "simple" output.  It's only a bit hacky.
 
-# run on output of `pdftotext -simple citiCreditCardStatement.pdf`
+# run on output of `pdftotext -simple CreditCardStatement.pdf`
 
 use strict;
 use warnings;
 use English;
 use Getopt::Std;
 
-use Cwd ();  # from https://metacpan.org/pod/lib::relative#SYNOPSIS
-use File::Basename ();
-use File::Spec ();
-use lib File::Spec->catdir(File::Basename::dirname(Cwd::abs_path __FILE__), '.');
-
+use FindBin;
+use lib $FindBin::Bin;
 use MyMods::StmtToCsv;
 
 my($scriptname, $scriptdirs, $scriptsuffix) = File::Basename::fileparse($0);
