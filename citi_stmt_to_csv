@@ -68,24 +68,20 @@ my ($cardholder,%cardtotals,$minyy_shown);
 sub lp_chs {
  # print "chs: minyy = $minyy\n" unless $minyy_shown; $minyy_shown = 1;
  # print "chs: $_\n" if $opt_v;
-   if( !$cardholder ) {
-      if( /^($rdesc)\s+Card ending in\s+\d{4}/ ) {
+   if( !defined($cardholder) ) {
+      if( m"^($rdesc)\s+Card ending in\s+\d{4}" ) {
          $cardholder = $1;
          print "cardholder = $cardholder\n" if $opt_v;
          }
       }
-   else {
-      my ($cardtotal) = m"^New Charges\s+\$$rdamtcapt";
-      if( $cardtotal ) {
-       # print "cardholder = $cardholder; cardtotal = $cardtotal\n";
-         $cardtotal = MyMods::StmtToCsv::tocents( $cardtotal );  # for cross-checking
-         print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opt_v;
-         $cardtotals{$cardholder} = $cardtotal;
-         my $ch_capt = $cardholder;  # required!
-         $section_parsers{ $cardholder } = sub { return lp_chtxns( $ch_capt ); };
-         updt_section_parsers();
-         $cardholder = undef;  # we're done with this $cardholder
-         }
+   elsif( m"^New Charges\s+\$$rdamtcapt" ) {
+      my $cardtotal = MyMods::StmtToCsv::tocents( $1 );  # for cross-checking
+      print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opt_v;
+      $cardtotals{$cardholder} = $cardtotal;
+      my $ch_capt = $cardholder;  # required!
+      $section_parsers{ $cardholder } = sub { return lp_chtxns( $ch_capt ); };
+      updt_section_parsers();
+      $cardholder = undef;  # we're done with this $cardholder
       }
    return 0;
    }
@@ -113,9 +109,8 @@ sub updt_section_parsers {
    }
 
 sub lp_findyr {
-   my ($yr) = m"\b\d{2}/\d{2}/(\d{2})\b";
-   if( $yr ) {
-      $yr += 2000;  # ugh!
+   if( m"\b\d{2}/\d{2}/(\d{2})\b" ) {
+      my $yr = $1 + 2000;  # ugh!
       $minyy = $yr if !$minyy || $minyy > $yr;
       }
    return 0;
