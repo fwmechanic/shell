@@ -2,6 +2,7 @@ package CCStmtP2tToCsv;
 
 use strict;
 use warnings;
+use Carp 'croak';
 use Data::Dumper;
 
 $Data::Dumper::Sortkeys = 1;
@@ -15,7 +16,7 @@ sub updt_section_hdr_re { my $self = shift;  # private method
 sub found_section_hdr { my $self = shift; my ($lphdr) = @_;
    my ($lpnorm) = $lphdr =~ s!\s+! !gr;
    my ($lprex ) = $lphdr =~ s!\s+!\\s+!gr;
-   die "$lphdr missing!\n" unless exists $self->{section_parsers}{ $lprex };
+   croak "$lphdr missing!\n" unless exists $self->{section_parsers}{ $lprex };
    print "lineparser = $lpnorm\n" if $self->{opts}{v};
    my $lpsub = delete( $self->{section_parsers}{ $lprex } );
    $self->updt_section_hdr_re();
@@ -39,22 +40,28 @@ sub add_txn { my $self = shift; my ($txtype,$postdate,$cents,$descr,$ctx,$src) =
    push @{$self->{txnByDate}{$txtype}{$postdate}}, \%txn;
    }
 
-sub add_total { my $self = shift; my ($txtype,$cents) = @_;
-   die "multiple definitions of txnTypeTotal[$txtype]\n" if exists $self->{txnTypeTotal}{$txtype};
+sub set_total { my $self = shift; my ($txtype,$cents) = @_;
+   croak "multiple definitions of txnTypeTotal[$txtype]\n" if exists $self->{txnTypeTotal}{$txtype};
    $self->{txnTypeTotal}{$txtype} = $cents;
    printf "total $txtype = %s\n", MyMods::StmtToCsv::cents_to_dc($cents);
    }
 
-sub set_stmtId { my $self = shift; my ($acctnum, $closeDate) = @_;
-   die "multiple calls to set_stmtId\n" if exists $self->{stmtId};
-   $self->{stmtId} = $acctnum . '_closed_' . $closeDate;
+sub set_stmtCloseDate { my $self = shift; my ($closeDate) = @_;
+   croak "multiple calls to set_stmtId\n" if exists $self->{closeDate};
+   $self->{closeDate} = $closeDate;
    }
 
-my $byDateToList = sub { my ($bdthref) = @_;
+my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called helper method
+   my $bdthref = $self->{txnByDate}{$type};
+   my ($srcFnm, $acctId, $closeDt) = ($self->{p2tfnm},$self->{acctId},$self->{closeDate});  # efficiency
    my @rslt;
    for my $dt ( sort keys %$bdthref ) {
       for( my $ix=0 ; $ix < scalar @{$bdthref->{$dt}} ; ++$ix ) {
-         $bdthref->{$dt}[$ix]{dtsnum} = $ix;  # modify source!
+         $bdthref->{$dt}[$ix]{dtsnum}   = $ix;  # modify source!
+         $bdthref->{$dt}[$ix]{srcdoc} ||= $srcFnm;  # modify source (denormalize)
+         $bdthref->{$dt}[$ix]{acctId}   = $acctId;  # modify source (denormalize)
+         $bdthref->{$dt}[$ix]{closeDt}  = $closeDt; # modify source (denormalize)
+         $bdthref->{$dt}[$ix]{stmtId}   = $acctId .'+closedt='. $closeDt; # modify source (denormalize)
          push @rslt, $bdthref->{$dt}[$ix];
          }
       }
@@ -63,7 +70,7 @@ my $byDateToList = sub { my ($bdthref) = @_;
 
 sub atstart { my $self = shift;
    my $ifnm = $self->{p2tfnm};
-   -e $ifnm or die "$ifnm is not a file\n";
+   -e $ifnm or croak "$ifnm is not a file\n";
    # does not produce desired results:
    # my($ifnmname, $ifnmdirs, $ifnmsuffix) = fileparse($ifnm);
    # print "$ifnm, $ifnmname, $ifnmdirs, $ifnmsuffix\n";
@@ -97,9 +104,11 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
       opts => $opts,
       };
    bless $self;
+   require './AccountId.pl' or die;
+   $self->{acctId} = &AccountId;  # print "acctId $self->{acctId}\n";
    $self->atstart();
    print "$p2tfnm\n\n";
-   open my $ifh, '<', $p2tfnm or die "abend cannot open $p2tfnm for reading: $!\n";
+   open my $ifh, '<', $p2tfnm or croak "abend cannot open $p2tfnm for reading: $!\n";
    my $lineparser = $self->found_section_hdr( $init_sp_key );
    while( <$ifh> ) { chomp;  # print "new line = $_\n";
       if( m"$self->{section_hdr_re}" ) {
@@ -110,13 +119,13 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
          }
       }
    for my $type ( sort keys %{$self->{txnByDate}} ) {
-      $self->{txnsByType}{$type} = $byDateToList->( $self->{txnByDate}{$type} );
+      $self->{txnsByType}{$type} = $_byDateToList->( $self, $type );
       }
 
    print "\ncross-checking\n\n";
    for my $txtype ( @{$required_checked_txntypes} ) {
-      defined($self->{txnTypeTotal}{$txtype}) or die "txtype $txtype has no total\n";
-      $self->{txnTypeTotal}{$txtype} == 0 or defined($self->{txnsByType}{$txtype}) or die "txtype $txtype has no txns\n";
+      defined($self->{txnTypeTotal}{$txtype}) or croak "txtype $txtype has no total\n";
+      $self->{txnTypeTotal}{$txtype} == 0 or defined($self->{txnsByType}{$txtype}) or croak "txtype $txtype has no txns\n";
       my $txsum = 0; map { $txsum += $_->{cents} } @{$self->{txnsByType}{$txtype}};
       MyMods::StmtToCsv::cross_chk_totals( $self->{txnTypeTotal}{$txtype} || 0, $txsum, $txtype );
       }

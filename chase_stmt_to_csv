@@ -57,23 +57,20 @@ sub add_txn { my ($self,$ctx) = @_;
 my ($closeDate,$acctnum);
 sub lp_AcctSummary { my $self = shift;  # print "lp_AcctSummary $_\n";
    s/(\w)`(\w)/$1$2/; # VERY strange translation issue
-   if( m"^\s*Account Number:\s+\d{4} \d{4} \d{4} (\d{4})\b" ) {  print "acctnum $1\n";
-      $acctnum = $1;
-      }
-   elsif( m"^\s*Payment,\s+Credits\s+(?:\-)?\$([\d,]+\.\d{2})" ) { print  "pymttot raw $1\n";
-      $self->add_total( 'credit', - MyMods::StmtToCsv::tocents($1) );
+   if( m"^\s*Payment,\s+Credits\s+(?:\-)?\$([\d,]+\.\d{2})" ) { print  "pymttot raw $1\n";
+      $self->set_total( 'credit', - MyMods::StmtToCsv::tocents($1) );
       }
    elsif( m"^\s*Purchases\s+(?:\+)?\$([\d,]+\.\d{2})" ) {  print  "purchtot raw $1\n";
-      $self->add_total( 'purchase', MyMods::StmtToCsv::tocents($1) );
+      $self->set_total( 'purchase', MyMods::StmtToCsv::tocents($1) );
       }
+ # elsif( m"^\s*Account Number:\s+\d{4} \d{4} \d{4} (\d{4})\b" ) {  print "acctnum $1\n";
+ #    $acctnum = $1;  # now obtained from ./AccountId.pl, but may be cross-checked in the future...
+ #    }
    elsif( m"^\s*Opening/Closing Date\s+\d{2}/\d{2}/(\d{2})\s+\-\s+(\d{2})/(\d{2})/(\d{2})" ) { print "yrMin/yrMax raw $1/$4\n";
       $yrMin = $1 + 2000;                 print "yrMin $yrMin\n";
       $yrMax = $4 + 2000 if $1 ne $4;     print "yrMax $yrMax\n" if $yrMax;
       $closeDate = $4 + 2000 . "-$2-$3";  print "closeDate $closeDate\n";
-      }
-   if( defined($acctnum) and defined($closeDate) ) {
-      $self->set_stmtId( $acctnum, $closeDate );
-      $acctnum = undef; $closeDate = undef;
+      $self->set_stmtCloseDate( $closeDate );
       }
    }
 
