@@ -7,23 +7,27 @@ use Data::Dumper;
 
 $Data::Dumper::Sortkeys = 1;
 
-sub updt_section_hdr_re { my $self = shift;  # private method
+sub _updt_section_hdr_re { my $self = shift;  # private method
    my $reraw = '(?!)';  # never matches  https://stackoverflow.com/a/4589566
       $reraw = '^\s*(' . join( '|', sort keys %{$self->{section_parsers}} ) . ')\b' if %{$self->{section_parsers}};
    print "updt_section_hdr_re = $reraw\n" if $self->{opts}{v};
    $self->{section_hdr_re} = qr{$reraw};
    }
-sub found_section_hdr { my $self = shift; my ($lphdr) = @_;
+sub _found_section_hdr { my $self = shift; my ($lphdr) = @_;
    my ($lpnorm) = $lphdr =~ s!\s+! !gr;
    my ($lprex ) = $lphdr =~ s!\s+!\\s+!gr;
    croak "$lphdr missing!\n" unless exists $self->{section_parsers}{ $lprex };
    print "lineparser = $lpnorm\n" if $self->{opts}{v};
    my $lpsub = delete( $self->{section_parsers}{ $lprex } );
-   $self->updt_section_hdr_re();
+   $self->_updt_section_hdr_re();
    push @{$self->{sections_seen}}, $lpnorm;
    return $lpsub;
    }
-sub section_parsers_report { my $self = shift;
+sub add_section_hdr { my $self = shift; my ($hdr,$coderef) = @_;
+   $self->{section_parsers}{ $hdr } = $coderef;
+   $self->_updt_section_hdr_re();
+   }
+sub _section_parsers_report { my $self = shift;
    printf "\n%d section_parsers used:\n", scalar @{$self->{sections_seen}};
    for my $lpnorm ( sort @{$self->{sections_seen}} ) {
       print "   ", $lpnorm, "\n";
@@ -68,7 +72,7 @@ my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called help
    return \@rslt;
    };
 
-sub atstart { my $self = shift;
+sub _atstart { my $self = shift;
    my $ifnm = $self->{p2tfnm};
    -e $ifnm or croak "$ifnm is not a file\n";
    # does not produce desired results:
@@ -92,10 +96,6 @@ sub atstart { my $self = shift;
       print "\n";
       }
    }
-sub add_section_hdr { my $self = shift; my ($hdr,$coderef) = @_;
-   $self->{section_parsers}{ $hdr } = $coderef;
-   $self->updt_section_hdr_re();
-   }
 sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes,$opts) = @_;
    my $self = {
       p2tfnm => $p2tfnm,
@@ -106,13 +106,13 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
    bless $self;
    require './AccountId.pl' or die;
    $self->{acctId} = &AccountId;  # print "acctId $self->{acctId}\n";
-   $self->atstart();
+   $self->_atstart();
    print "$p2tfnm\n\n";
    open my $ifh, '<', $p2tfnm or croak "abend cannot open $p2tfnm for reading: $!\n";
-   my $lineparser = $self->found_section_hdr( $init_sp_key );
+   my $lineparser = $self->_found_section_hdr( $init_sp_key );
    while( <$ifh> ) { chomp;  # print "new line = $_\n";
       if( m"$self->{section_hdr_re}" ) {
-         $lineparser = $self->found_section_hdr( $1 );
+         $lineparser = $self->_found_section_hdr( $1 );
          }
       elsif( $lineparser ) {
          $lineparser->( $self );
@@ -130,7 +130,7 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
       MyMods::StmtToCsv::cross_chk_totals( $self->{txnTypeTotal}{$txtype} || 0, $txsum, $txtype );
       }
 
-   $self->section_parsers_report();
+   $self->_section_parsers_report();
 
    if( 0 ) {  # various debug variants
       # print Data::Dumper->Dump([$self->{txnByDate}, $self->{txnsByType}], [qw(txnByDate txnsByType)]);
