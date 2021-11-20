@@ -75,32 +75,31 @@ my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called help
    return \@rslt;
    };
 
-sub _atstart { my $self = shift;
-   my $ifnm = $self->{p2tfnm};
-   -e $ifnm or croak "$ifnm is not a file\n";
-   # does not produce desired results:
-   # my($ifnmname, $ifnmdirs, $ifnmsuffix) = fileparse($ifnm);
-   # print "$ifnm, $ifnmname, $ifnmdirs, $ifnmsuffix\n";
-   my ($ifnx) = $ifnm =~ m"(.+\.)[^.]+$";
-   $self->{fnmNoExt} = $ifnx;
-   my $addltxnfnm = $ifnx . 'addltxns';
+sub _rdAddlTxns { my $self = shift; my ($ifnx) = @_;
+   my $src = 'addltxns';
+   my $addltxnfnm = $ifnx . $src;
    if( -e $addltxnfnm ) {
-      print "$addltxnfnm $addltxnfnm\n\n";
+      print "addltxnfnm $addltxnfnm\n\n";
+      my $rdesc = '\w.*\w';
       open my $ifh, '<', $addltxnfnm or die "abend cannot open $addltxnfnm for reading: $!\n";
       while (my $line = <$ifh>) {
          chomp $line;
          if( $line =~ m"\S" ) {
-            my $rdesc = '\w.*\w';
             my ($holder,$dt,$txcents,$desc) = $line =~ m"^($rdesc):\s+(\d{4}\-\d{2}\-\d{2})\s+(\d+)\s+($rdesc)";
             die "bad format in $addltxnfnm: $_\n" unless $desc;
             MyMods::StmtToCsv::showtxn( $holder,$dt,$txcents,$desc );
-            $self->add_txn( 'charge', $dt, $txcents, $desc, $holder, 'addltxns' );
+            $self->add_txn( 'charge', $dt, $txcents, $desc, $holder, $src );
             }
          }
       print "\n";
       }
    }
 sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes,$opts) = @_;
+   -e $p2tfnm or croak "$p2tfnm is not a file\n";
+   # does not produce desired results:
+   # my($ifnmname, $ifnmdirs, $ifnmsuffix) = fileparse($ifnm);
+   # print "$ifnm, $ifnmname, $ifnmdirs, $ifnmsuffix\n";
+   my ($ifnx) = $p2tfnm =~ m"(.+\.)[^.]+$";
    my $self = {
       p2tfnm => $p2tfnm,
       section_parsers => $spref,
@@ -110,7 +109,7 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
    bless $self;
    require './AccountId.pl' or die;
    $self->{acctId} = &AccountId;  # print "acctId $self->{acctId}\n";
-   $self->_atstart();
+   $self->_rdAddlTxns( $ifnx );
    print "$p2tfnm\n\n";
    {
    open my $ifh, '<', $p2tfnm or croak "abend cannot open $p2tfnm for reading: $!\n";
@@ -144,14 +143,13 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
         print Data::Dumper->Dump([$self->{txnsByType}], [qw(txnsByType)]);
       }
 
-   my $fnmnx = $self->{fnmNoExt};
    {
-   my $ofnm = $fnmnx . 'DDump';
+   my $ofnm = $ifnx . 'DDump';
    open my $ofh, '>', $ofnm or croak "abend cannot open $ofnm for writing: $!\n";
    print $ofh Data::Dumper->Dump([$self->{txnsByType}], [qw(txnsByType)]);
    }
    {
-   my $ofnm = $fnmnx . 'csv';
+   my $ofnm = $ifnx . 'csv';
    open my $ofh, '>', $ofnm or croak "abend cannot open $ofnm for writing: $!\n";
    my @hdr = qw( date dc description stmtId );
   #print $ofh join( ',', map { '"'.$_.'"' } @hdr ), "\n";
