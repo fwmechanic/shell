@@ -11,7 +11,6 @@ use lib $FindBin::Bin;
 use CCStmtP2tToCsv;
 
 my $opts = CCStmtP2tToCsv::getopts();
-@ARGV == 1 or die "this program can only process one p2t file\n";
 
 my $rdt = '\d{2}/\d{2}';
 my $rdesc = '\w.*\w';
@@ -19,41 +18,40 @@ my $rdamtcapt = '([\d,]*\.\d{2})';
 my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)\$$rdamtcapt\b";
 my $retxn = "^(?:$rdt)?$rtxn";
 
-sub lp_Payments { # my $self = shift; $self->parse_new_txn( $retxn, 'credit' );  no way to cross-check credits in Citi stmts (because Citi stmts provide no total for credits)
-   }
-
-my ($cardholder);  # multiline parse support
-sub lp_CardholderSummary { my $self = shift;
- # print "chs: $_\n" if $opts->{v};
-   if( !defined($cardholder) ) {
-      if( m"^($rdesc)\s+Card ending in\s+\d{4}" ) {
-         $cardholder = $1;
-         print "cardholder = $cardholder\n" if $opts->{v};
+for my $ifnm ( @ARGV ) {
+   my $lp_Payments = sub { # my $self = shift; $self->parse_new_txn( $retxn, 'credit' );  no way to cross-check credits in Citi stmts (because Citi stmts provide no total for credits)
+      };
+   my ($cardholder);  # multiline parse support
+   my $lp_CardholderSummary = sub { my $self = shift;
+    # print "chs: $_\n" if $opts->{v};
+      if( !defined($cardholder) ) {
+         if( m"^($rdesc)\s+Card ending in\s+\d{4}" ) {
+            $cardholder = $1;
+            print "cardholder = $cardholder\n" if $opts->{v};
+            }
          }
-      }
-   elsif( m"^New Charges\s+\$$rdamtcapt" ) {
-      my $cardtotal = CCStmtP2tToCsv::tocents( $1 );  # for cross-checking
-      print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opts->{v};
-      $self->set_total( $cardholder, $cardtotal );
-      my $ch_capt = $cardholder;  # required!
-      $self->add_section_hdr( $cardholder, sub { my $self = shift; $self->parse_new_txn( $retxn, 'charge', $ch_capt ); } );
-      $cardholder = undef;  # we're done with this $cardholder
-      }
+      elsif( m"^New Charges\s+\$$rdamtcapt" ) {
+         my $cardtotal = CCStmtP2tToCsv::tocents( $1 );  # for cross-checking
+         print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opts->{v};
+         $self->set_total( $cardholder, $cardtotal );
+         my $ch_capt = $cardholder;  # required!
+         $self->add_section_hdr( $cardholder, sub { my $self = shift; $self->parse_new_txn( $retxn, 'charge', $ch_capt ); } );
+         $cardholder = undef;  # we're done with this $cardholder
+         }
+      };
+   my $lp_ignore = sub {;};
+   my $lp_BillPeriod = sub { my $self = shift;
+      if( m"^\s*Billing\s+Period:\s+\d{2}/\d{2}/(\d{2})\-(\d{2})/(\d{2})/(\d{2})" ) { print "yrMin/yrMax raw $1/$4\n";
+         $self->set_stmtOpenCloseDates();
+         }
+      };
+   my $init_key = '(start_of_file)';
+   CCStmtP2tToCsv::process_stmt_p2t( shift,
+      {
+      $init_key                                 => $lp_BillPeriod,
+      'CARDHOLDER\s+SUMMARY'                    => $lp_CardholderSummary,
+      'Payments,\s+Credits\s+and\s+Adjustments' => $lp_Payments,
+      'Fees\s+Charged'                          => $lp_ignore,
+      }, $init_key, [ qw( charge ) ], $opts
+      );
    }
-
-sub lp_ignore {;}
-sub lp_BillPeriod { my $self = shift;
-   if( m"^\s*Billing\s+Period:\s+\d{2}/\d{2}/(\d{2})\-(\d{2})/(\d{2})/(\d{2})" ) { print "yrMin/yrMax raw $1/$4\n";
-      $self->set_stmtOpenCloseDates();
-      }
-   }
-
-my $init_key = '(start_of_file)';
-CCStmtP2tToCsv::process_stmt_p2t( shift,
-   {
-   $init_key                                 => \&lp_BillPeriod,
-   'CARDHOLDER\s+SUMMARY'                    => \&lp_CardholderSummary,
-   'Payments,\s+Credits\s+and\s+Adjustments' => \&lp_Payments,
-   'Fees\s+Charged'                          => \&lp_ignore,
-   }, $init_key, [ qw( charge ) ], $opts
-   );

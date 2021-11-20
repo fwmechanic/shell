@@ -49,12 +49,12 @@ sub cross_chk_totals { my ($stmtTotal,$accumdTxns,$anno) = @_;
    $anno = sprintf "%-26s", $anno;
    if( $stmtTotal != $accumdTxns ) {
       printf "**************************************************************************************\n";
-      printf "$anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns), cents_to_dc_pretty($stmtTotal - $accumdTxns);
+      printf "cross-check $anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns), cents_to_dc_pretty($stmtTotal - $accumdTxns);
       printf "**************************************************************************************\n";
       exit(1);
       }
    else {
-      printf "$anno: stmtTotal (%s) == accumdTxns (%s) same\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns);
+      printf "cross-check $anno: stmtTotal (%s) == accumdTxns (%s) same\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns);
       }
    }
 
