@@ -55,6 +55,8 @@ sub set_stmtCloseDate { my $self = shift; my ($closeDate) = @_;
    $self->{closeDate} = $closeDate;
    }
 
+my $cents_to_dc = sub { my $cents = shift; sprintf "%d.%02d", $cents / 100, $cents % 100; };
+
 my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called helper method
    my $bdthref = $self->{txnByDate}{$type};
    my ($srcFnm, $acctId, $closeDt) = ($self->{p2tfnm},$self->{acctId},$self->{closeDate});  # efficiency
@@ -62,6 +64,7 @@ my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called help
    for my $dt ( sort keys %$bdthref ) {
       for( my $ix=0 ; $ix < scalar @{$bdthref->{$dt}} ; ++$ix ) {
          $bdthref->{$dt}[$ix]{dtsnum}   = $ix;  # modify source!
+         $bdthref->{$dt}[$ix]{dc} = $cents_to_dc->($bdthref->{$dt}[$ix]{cents});
          $bdthref->{$dt}[$ix]{srcdoc} ||= $srcFnm;  # modify source (denormalize)
          $bdthref->{$dt}[$ix]{acctId}   = $acctId;  # modify source (denormalize)
          $bdthref->{$dt}[$ix]{closeDt}  = $closeDt; # modify source (denormalize)
@@ -79,6 +82,7 @@ sub _atstart { my $self = shift;
    # my($ifnmname, $ifnmdirs, $ifnmsuffix) = fileparse($ifnm);
    # print "$ifnm, $ifnmname, $ifnmdirs, $ifnmsuffix\n";
    my ($ifnx) = $ifnm =~ m"(.+\.)[^.]+$";
+   $self->{fnmNoExt} = $ifnx;
    my $addltxnfnm = $ifnx . 'addltxns';
    if( -e $addltxnfnm ) {
       print "$addltxnfnm $addltxnfnm\n\n";
@@ -108,6 +112,7 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
    $self->{acctId} = &AccountId;  # print "acctId $self->{acctId}\n";
    $self->_atstart();
    print "$p2tfnm\n\n";
+   {
    open my $ifh, '<', $p2tfnm or croak "abend cannot open $p2tfnm for reading: $!\n";
    my $lineparser = $self->_found_section_hdr( $init_sp_key );
    while( <$ifh> ) { chomp;  # print "new line = $_\n";
@@ -118,6 +123,7 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
          $lineparser->( $self );
          }
       }
+   }
    for my $type ( sort keys %{$self->{txnByDate}} ) {
       $self->{txnsByType}{$type} = $_byDateToList->( $self, $type );
       }
@@ -138,7 +144,21 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
         print Data::Dumper->Dump([$self->{txnsByType}], [qw(txnsByType)]);
       }
 
-   print Data::Dumper->Dump([$self->{txnsByType}], [qw(txnsByType)]);
+   my $fnmnx = $self->{fnmNoExt};
+   {
+   my $ofnm = $fnmnx . 'DDump';
+   open my $ofh, '>', $ofnm or croak "abend cannot open $ofnm for writing: $!\n";
+   print $ofh Data::Dumper->Dump([$self->{txnsByType}], [qw(txnsByType)]);
+   }
+   {
+   my $ofnm = $fnmnx . 'csv';
+   open my $ofh, '>', $ofnm or croak "abend cannot open $ofnm for writing: $!\n";
+   my @hdr = qw( date dc description stmtId );
+  #print $ofh join( ',', map { '"'.$_.'"' } @hdr ), "\n";
+   for ( @{$self->{txnsByType}{$required_checked_txntypes->[0]}} ) {
+      print $ofh join( ',', map { '"'.$_.'"' } @{$_}{@hdr} ), "\n";
+      }
+   }
    }
 
 1;

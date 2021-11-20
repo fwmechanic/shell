@@ -87,5 +87,5 @@ CCStmtP2tToCsv::process_stmt_p2t( shift,
    'BALANCE\s+TRANSFERS'              => \&lp_ignore,
    'FEES\s+CHARGED'                   => \&lp_ignore,
    'RETURNS\s+AND\s+OTHER\s+CREDITS'  => \&lp_ignore,
-   }, $init_key, [ qw( credit purchase ) ], \%opts
+   }, $init_key, [ qw( purchase credit ) ], \%opts
    );
