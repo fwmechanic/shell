@@ -18,7 +18,7 @@ my $rdamtcapt = '([\d,]*\.\d{2})';
 my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b";
 my $retxn = "^$rtxn";
 
-for my $ifnm ( @ARGV ) {
+for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sorted (assumes stmt filenames are validly date-sortable)
    my $lp_ignore = sub {;};
    my $lp_AcctSummary = sub { my $self = shift;  # print "lp_AcctSummary $_\n";
       s/(\w)`(\w)/$1$2/; # VERY strange translation issue
@@ -51,3 +51,4 @@ for my $ifnm ( @ARGV ) {
       }, $init_key, [ qw( purchase ) ], $opts
       );
    }
+CCStmtP2tToCsv::write_all_csv() if @ARGV > 1;

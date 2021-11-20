@@ -151,6 +151,7 @@ my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called help
    return \@rslt;
    };
 
+my @allcsv;
 sub _rdAddlTxns { my $self = shift; my ($ifnx) = @_;
    my $src = 'addltxns';
    my $addltxnfnm = $ifnx . $src;
@@ -226,6 +227,7 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
    open my $ofh, '>', $ofnm or croak "abend cannot open $ofnm for writing: $!\n";
    print $ofh Data::Dumper->Dump([$self->{txnsByType}], [qw(txnsByType)]);
    }
+   my @csvLines;
    {
    my $ofnm = $ifnx . 'csv';
    open my $ofh, '>', $ofnm or croak "abend cannot open $ofnm for writing: $!\n";
@@ -233,11 +235,22 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
   #print $ofh join( ',', map { '"'.$_.'"' } @hdr ), "\n";
    for my $txntype ( sort @{$ar_export_txntypes} ) {
       for ( @{$self->{txnsByType}{$txntype}} ) {
-         print $ofh join( ',', map { '"'.$_.'"' } @{$_}{@hdr} ), "\n";
+         my $csvline = join( ',', map { '"'.$_.'"' } @{$_}{@hdr} );
+         push @csvLines, $csvline;
+         print $ofh $csvline, "\n";
          }
       }
    }
-   print "\ndone\n";
+   print "\ndone with $p2tfnm\n\n";
+   push @allcsv, @csvLines;
+   }
+
+
+
+sub write_all_csv {
+   my $ofnm = 'all.csv';
+   open my $ofh, '>', $ofnm or die "abend cannot open $ofnm for writing: $!\n";
+   print $ofh join( "\n", @allcsv ), "\n";  # sorting @allcsv here can change order of same-day transactions based on their dollar amount (which is undesirable)
    }
 
 1;

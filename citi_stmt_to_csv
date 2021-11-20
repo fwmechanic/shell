@@ -18,7 +18,7 @@ my $rdamtcapt = '([\d,]*\.\d{2})';
 my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)\$$rdamtcapt\b";
 my $retxn = "^(?:$rdt)?$rtxn";
 
-for my $ifnm ( @ARGV ) {
+for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sorted (assumes stmt filenames are validly date-sortable)
    my $lp_Payments = sub { # my $self = shift; $self->parse_new_txn( $retxn, 'credit' );  no way to cross-check credits in Citi stmts (because Citi stmts provide no total for credits)
       };
    my ($cardholder);  # multiline parse support
@@ -55,3 +55,4 @@ for my $ifnm ( @ARGV ) {
       }, $init_key, [ qw( charge ) ], $opts
       );
    }
+CCStmtP2tToCsv::write_all_csv() if @ARGV > 1;
