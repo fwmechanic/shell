@@ -1,11 +1,64 @@
 package CCStmtP2tToCsv;
 
+# seeking to convert a credit card PDF statement content to CSV or similar
+# I stumbled across the fact that git-bash includes pdftotext, and
+# that pdftotext's "simple" mode does a very fine job of extracting what I need
+# (in the case perhaps ONLY of this particular CC company's PDF statement)!
+# What's left is to slice and dice the "simple" output.  It's only a bit hacky.
+
+# run on output of `pdftotext -simple CreditCardStatement.pdf`
+
 use strict;
 use warnings;
 use Carp 'croak';
 use Data::Dumper;
+use Getopt::Std ();
 
 $Data::Dumper::Sortkeys = 1;
+
+sub getopts {
+   my %opts;
+   Getopt::Std::getopts('vh', \%opts);
+   if( $opts{h} ) {
+      my($scriptname, $scriptdirs, $scriptsuffix) = File::Basename::fileparse($0);
+      print STDERR <<"EOT";
+$scriptname: convert Credit Card PDF statement to structured text (CSV)
+usage: $scriptname [-h] [-v] [inputfilename]
+  -h   this help
+  -v   verbose
+EOT
+      die "abend\n"
+      }
+   return \%opts;
+   }
+
+sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops; any leading sign or $ shall have been stripped.
+   $dcstr =~ s/[,]//g;
+   my ($dol, $cents) = $dcstr =~ /^(\d*)\.(\d{2})$/;
+   return ((($dol || 0) * 100) + $cents);
+   }
+
+sub cents_to_dc_pretty { my ($cents) = @_; sprintf "%5d.%02d", $cents / 100, $cents % 100; }
+my $cents_to_dc = sub  { my ($cents) = @_; sprintf  "%d.%02d", $cents / 100, $cents % 100; };
+
+sub showtxn { my ($holder,$dt,$txcents,$desc) = @_;
+   printf "%-17s: %s %s %s\n", $holder, $dt, cents_to_dc_pretty($txcents), $desc;
+   }
+
+sub cross_chk_totals { my ($stmtTotal,$accumdTxns,$anno) = @_;
+   $anno = sprintf "%-26s", $anno;
+   if( $stmtTotal != $accumdTxns ) {
+      printf "**************************************************************************************\n";
+      printf "$anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns), cents_to_dc_pretty($stmtTotal - $accumdTxns);
+      printf "**************************************************************************************\n";
+      exit(1);
+      }
+   else {
+      printf "$anno: stmtTotal (%s) == accumdTxns (%s) same\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns);
+      }
+   }
+
+
 
 sub _updt_section_hdr_re { my $self = shift;  # private method
    my $reraw = '(?!)';  # never matches  https://stackoverflow.com/a/4589566
@@ -24,6 +77,7 @@ sub _found_section_hdr { my $self = shift; my ($lphdr) = @_;
    return $lpsub;
    }
 sub add_section_hdr { my $self = shift; my ($hdr,$coderef) = @_;
+   $hdr =~ s!\s+!\\s+!g;
    $self->{section_parsers}{ $hdr } = $coderef;
    $self->_updt_section_hdr_re();
    }
@@ -37,25 +91,25 @@ sub _section_parsers_report { my $self = shift;
       print "   ", $lprex =~ s!\Q\s+! !gr, "\n";
       }
    }
-sub add_txn { my $self = shift; my ($txtype,$postdate,$cents,$descr,$ctx,$src) = @_;
-   my %txn = ( txtype=>$txtype, date=>$postdate, cents=>$cents, description=>$descr );
+sub add_txn { my $self = shift; my ($txtype,$totalnm,$postdate,$cents,$descr,$ctx,$src) = @_;
+   my %txn = ( txtype=>$txtype, totalnm=>$totalnm, date=>$postdate, cents=>$cents, description=>$descr );
    $txn{context} = $ctx if defined $ctx;
    $txn{srcdoc}  = $src if defined $src;
    push @{$self->{txnByDate}{$txtype}{$postdate}}, \%txn;
+   push @{$self->{txnByTotal}{$totalnm}}, \%txn;
+   $self->{totalnmToTxtype}{$totalnm} ||= $txtype;
    }
 
 sub set_total { my $self = shift; my ($txtype,$cents) = @_;
    croak "multiple definitions of txnTypeTotal[$txtype]\n" if exists $self->{txnTypeTotal}{$txtype};
    $self->{txnTypeTotal}{$txtype} = $cents;
-   printf "total $txtype = %s\n", MyMods::StmtToCsv::cents_to_dc($cents);
+   printf "total $txtype = %s\n", cents_to_dc_pretty($cents);
    }
 
 sub set_stmtCloseDate { my $self = shift; my ($closeDate) = @_;
    croak "multiple calls to set_stmtId\n" if exists $self->{closeDate};
    $self->{closeDate} = $closeDate;
    }
-
-my $cents_to_dc = sub { my $cents = shift; sprintf "%d.%02d", $cents / 100, $cents % 100; };
 
 my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called helper method
    my $bdthref = $self->{txnByDate}{$type};
@@ -87,14 +141,14 @@ sub _rdAddlTxns { my $self = shift; my ($ifnx) = @_;
          if( $line =~ m"\S" ) {
             my ($holder,$dt,$txcents,$desc) = $line =~ m"^($rdesc):\s+(\d{4}\-\d{2}\-\d{2})\s+(\d+)\s+($rdesc)";
             die "bad format in $addltxnfnm: $_\n" unless $desc;
-            MyMods::StmtToCsv::showtxn( $holder,$dt,$txcents,$desc );
-            $self->add_txn( 'charge', $dt, $txcents, $desc, $holder, $src );
+            showtxn( $holder,$dt,$txcents,$desc );
+            $self->add_txn( 'charge', $holder, $dt, $txcents, $desc, $holder, $src );
             }
          }
       print "\n";
       }
    }
-sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes,$opts) = @_;
+sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts) = @_;
    -e $p2tfnm or croak "$p2tfnm is not a file\n";
    # does not produce desired results:
    # my($ifnmname, $ifnmdirs, $ifnmsuffix) = fileparse($ifnm);
@@ -128,11 +182,13 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
       }
 
    print "\ncross-checking\n\n";
-   for my $txtype ( @{$required_checked_txntypes} ) {
-      defined($self->{txnTypeTotal}{$txtype}) or croak "txtype $txtype has no total\n";
-      $self->{txnTypeTotal}{$txtype} == 0 or defined($self->{txnsByType}{$txtype}) or croak "txtype $txtype has no txns\n";
-      my $txsum = 0; map { $txsum += $_->{cents} } @{$self->{txnsByType}{$txtype}};
-      MyMods::StmtToCsv::cross_chk_totals( $self->{txnTypeTotal}{$txtype} || 0, $txsum, $txtype );
+
+   for my $totalnm ( sort keys %{$self->{txnByTotal}} ) {
+      defined($self->{txnTypeTotal}{$totalnm}) or croak "totalnm $totalnm has no total\n";
+      $self->{txnTypeTotal}{$totalnm} == 0 or defined($self->{txnByTotal}{$totalnm}) or croak "txtype $totalnm has no txns\n";
+      my $txsum = 0; map { $txsum += $_->{cents} } @{$self->{txnByTotal}{$totalnm}};
+      my $anno = $self->{totalnmToTxtype}{$totalnm} eq $totalnm ? $totalnm : $self->{totalnmToTxtype}{$totalnm} .'::'. $totalnm;
+      cross_chk_totals( $self->{txnTypeTotal}{$totalnm} || 0, $txsum, $anno );
       }
 
    $self->_section_parsers_report();
@@ -153,10 +209,13 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$required_checked_txntypes
    open my $ofh, '>', $ofnm or croak "abend cannot open $ofnm for writing: $!\n";
    my @hdr = qw( date dc description stmtId );
   #print $ofh join( ',', map { '"'.$_.'"' } @hdr ), "\n";
-   for ( @{$self->{txnsByType}{$required_checked_txntypes->[0]}} ) {
-      print $ofh join( ',', map { '"'.$_.'"' } @{$_}{@hdr} ), "\n";
+   for my $txntype ( sort @{$ar_export_txntypes} ) {
+      for ( @{$self->{txnsByType}{$txntype}} ) {
+         print $ofh join( ',', map { '"'.$_.'"' } @{$_}{@hdr} ), "\n";
+         }
       }
    }
+   print "\ndone\n";
    }
 
 1;

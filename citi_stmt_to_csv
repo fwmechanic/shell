@@ -1,165 +1,76 @@
 #!/usr/bin/perl -w
 
-# seeking to convert a credit card PDF statement content to CSV or similar
-# I stumbled across the fact that git-bash includes pdftotext, and
-# that pdftotext's "simple" mode does a very fine job of extracting what I need
-# (in the case perhaps ONLY of this particular CC company's PDF statement)!
-# What's left is to slice and dice the "simple" output.  It's only a bit hacky.
-
-# run on output of `pdftotext -simple CreditCardStatement.pdf`
+# run on output of `pdftotext -simple Citi_CreditCardStatement.pdf Citi_CreditCardStatement.p2t`
+# see %~dp0/CCStmtP2tToCsv.pm for details
 
 use strict;
 use warnings;
-use English;
-use Getopt::Std;
 
 use FindBin;
 use lib $FindBin::Bin;
-use MyMods::StmtToCsv;
+use CCStmtP2tToCsv;
 
-my($scriptname, $scriptdirs, $scriptsuffix) = File::Basename::fileparse($0);
-
-sub die_w_usage {
-   print STDERR <<"EOT";
-$scriptname: convert Credit Card PDF statement to structured text (CSV)
-usage: $scriptname [-h] [-v] [inputfilename]
-  -h   this help
-  -v   verbose
-EOT
-   die "abend\n"
-   }
-
-our ($opt_v,$opt_h);
-getopts('vh');
-
-my (%section_parsers,$minyy);
+my $opts = CCStmtP2tToCsv::getopts();
+@ARGV == 1 or die "this program can only process one p2t file\n";
 
 my $rdt = '\d{2}/\d{2}';
 my $rdesc = '\w.*\w';
 my $rdamtcapt = '([\d,]*\.\d{2})';
 my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)\$$rdamtcapt\b";
 
-my %txns;
-sub txn { my ($ctx) = @_;
+my ($yrMin,$yrMax);
+sub add_txn { my ($self,$txntype,$totalnm) = @_;
+   defined($yrMin) or die "yrMin not defined prior to txn processing\n";
    if( m"^(?:$rdt)?$rtxn" ) {
-      my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, MyMods::StmtToCsv::tocents($4));
+      $totalnm ||= $txntype;
+      my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, CCStmtP2tToCsv::tocents($4));
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
-      $txpostdt = "$minyy-$txpostdt";
+      $txpostdt = (($yrMax && $txpostdt =~ m"^01") ? $yrMax : $yrMin) . "-$txpostdt";  # prepend year
       $txcents = 0 - $txcents if $sign eq '-';
       $txdesc =~ s!\s\s+! # !g;
-      MyMods::StmtToCsv::showtxn( $ctx, $txpostdt, $txcents, $txdesc );
-      return ($txpostdt, $txcents, $txdesc);
-      }
-   if( m"^(No Activity)\b" ) {
-      return ('-', 0, $1);
+      CCStmtP2tToCsv::showtxn( $totalnm, $txpostdt, $txcents, $txdesc );
+      $self->add_txn( $txntype, $totalnm, $txpostdt, $txcents, $txdesc );
       }
    }
 
-my %charges;
-sub lp_chtxns { my ($cardholder) = @_;
-   my ($txpostdt, $txcents, $txdesc) = txn( $cardholder );
-   $charges{ $cardholder } += $txcents if $txdesc;
-   return 0;
+sub lp_pymts { # my $self = shift; add_txn($self,'credit');
    }
 
-my ($cardholder,%cardtotals,$minyy_shown);
-sub lp_chs {
- # print "chs: minyy = $minyy\n" unless $minyy_shown; $minyy_shown = 1;
- # print "chs: $_\n" if $opt_v;
+my ($cardholder,%cardtotals);
+sub lp_chs { my $self = shift;
+ # print "chs: $_\n" if $opts->{v};
    if( !defined($cardholder) ) {
       if( m"^($rdesc)\s+Card ending in\s+\d{4}" ) {
          $cardholder = $1;
-         print "cardholder = $cardholder\n" if $opt_v;
+         print "cardholder = $cardholder\n" if $opts->{v};
          }
       }
    elsif( m"^New Charges\s+\$$rdamtcapt" ) {
-      my $cardtotal = MyMods::StmtToCsv::tocents( $1 );  # for cross-checking
-      print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opt_v;
-      $cardtotals{$cardholder} = $cardtotal;
+      my $cardtotal = CCStmtP2tToCsv::tocents( $1 );  # for cross-checking
+      print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opts->{v};
+      $self->set_total( $cardholder, $cardtotal );
       my $ch_capt = $cardholder;  # required!
-      $section_parsers{ $cardholder } = sub { return lp_chtxns( $ch_capt ); };
-      updt_section_parsers();
+      $self->add_section_hdr( $cardholder, sub { my $self = shift; add_txn( $self, 'charge', $ch_capt ); } );
       $cardholder = undef;  # we're done with this $cardholder
       }
-   return 0;
    }
 
-sub lp_pymts { txn('credit'); return 0; }
-
-sub lp_fc {
-   return 1;
+sub lp_ignore {;}
+sub lp_findyr { my $self = shift;
+   if( m"^\s*Billing\s+Period:\s+\d{2}/\d{2}/(\d{2})\-(\d{2})/(\d{2})/(\d{2})" ) { print "yrMin/yrMax raw $1/$4\n";
+      $yrMin = $1 + 2000;                    print "yrMin $yrMin\n";
+      $yrMax = $4 + 2000 if $1 ne $4;        print "yrMax $yrMax\n" if $yrMax;
+      my $closeDate = $4 + 2000 . "-$2-$3";  print "closeDate $closeDate\n";
+      $self->set_stmtCloseDate( $closeDate );
+      }
    }
 
-%section_parsers = (
-   'CARDHOLDER SUMMARY'                => \&lp_chs,
-   'Payments, Credits and Adjustments' => \&lp_pymts,
-   'Fees Charged'                      => \&lp_fc,
-   # 'Interest Charged'   => \&ic,
-   # '2021 totals year-to-date' => \&tiytd,
+my $init_key = '(start_of_file)';
+CCStmtP2tToCsv::process_stmt_p2t( shift,
+   {
+   $init_key                                 => \&lp_findyr,
+   'CARDHOLDER\s+SUMMARY'                    => \&lp_chs,
+   'Payments,\s+Credits\s+and\s+Adjustments' => \&lp_pymts,
+   'Fees\s+Charged'                          => \&lp_ignore,
+   }, $init_key, [ qw( charge ) ], $opts
    );
-
-my $section_hdr_re;
-sub updt_section_parsers {
-   my $reraw = '(?!)';  # never matches  https://stackoverflow.com/a/4589566
-      $reraw = '^(' . join( '|', sort keys %section_parsers ) . ')\b' if %section_parsers;
-   print "updt_section_parsers = $reraw\n" if $opt_v;
-   $section_hdr_re = qr{$reraw};
-   }
-
-sub lp_findyr {
-   if( m"\b\d{2}/\d{2}/(\d{2})\b" ) {
-      my $yr = $1 + 2000;  # ugh!
-      $minyy = $yr if !$minyy || $minyy > $yr;
-      }
-   return 0;
-   }
-
-sub atstart { my ($ifnm) = @_;
-   # does not produce desired results:
-   # my($ifnmname, $ifnmdirs, $ifnmsuffix) = fileparse($ifnm);
-   # print "$ifnm, $ifnmname, $ifnmdirs, $ifnmsuffix\n";
-   my ($ifnx) = $ifnm =~ m"(.+\.)[^.]+$";
-   my $addltxnfnm = $ifnx . 'addltxns';
-   if( -e $addltxnfnm ) {
-      print "$addltxnfnm\n\n";
-      open my $ifh, '<', $addltxnfnm or die "abend cannot open $addltxnfnm for reading: $!\n";
-      while (my $line = <$ifh>) {
-         chomp $line;
-         if( $line =~ m"\S" ) {
-            my ($holder,$dt,$txcents,$desc) = $line =~ m"^($rdesc):\s+(\d{4}\-\d{2}\-\d{2})\s+(\d+)\s+($rdesc)";
-            die "bad format in $addltxnfnm: $_\n" unless $desc;
-            MyMods::StmtToCsv::showtxn( $holder, $dt, $txcents, $desc );
-            $charges{ $holder } += $txcents;
-            }
-         }
-      print "\n";
-      }
-   print "$ifnm\n\n";
-   return $ifnm;
-   }
-
-updt_section_parsers();
-my $lineparser = \&lp_findyr;
-my $fnm1;
-while( <> ) {
-   $fnm1 = atstart( $ARGV ) unless $fnm1;
-   $ARGV eq $fnm1 or die "this program can only process one p2t file\n";
-   chomp;
-   # print "new line = $_\n";
-   if( m"$section_hdr_re" ) {
-      my $lphdr = $1;
-      die "$lphdr missing!\n" unless exists $section_parsers{ $lphdr };
-      print "lineparser = $lphdr\n" if $opt_v;
-      $lineparser = delete( $section_parsers{ $lphdr } );
-      updt_section_parsers();
-      next;
-      }
-   last if $lineparser->();
-   }
-
-print "\ncross-checking\n\n";
-%cardtotals or die "no cardtotals to check!\n";
-%charges    or die "no %charges to check!\n";
-for( sort keys %cardtotals ) {
-   MyMods::StmtToCsv::cross_chk_totals( $cardtotals{$_}, $charges{$_}, sprintf( "charges %-20s", $_ ) );
-   }
