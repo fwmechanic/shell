@@ -106,9 +106,31 @@ sub set_total { my $self = shift; my ($txtype,$cents) = @_;
    printf "total $txtype = %s\n", cents_to_dc_pretty($cents);
    }
 
-sub set_stmtCloseDate { my $self = shift; my ($closeDate) = @_;
+sub set_stmtCloseDate { my $self = shift; my ($closeDate, $yrMin, $yrMax) = @_;
    croak "multiple calls to set_stmtId\n" if exists $self->{closeDate};
    $self->{closeDate} = $closeDate;
+   $self->{yrMin} = $yrMin;
+   $self->{yrMax} = $yrMax;
+   }
+sub set_stmtOpenCloseDates { my $self = shift; # my ($closeDate, $yrMin, $yrMax) = @_;
+   my $yrMin = $1 + 2000;                 print "yrMin $yrMin\n";
+   my $yrMax = $4 + 2000 if $1 ne $4;     print "yrMax $yrMax\n" if $yrMax;
+   my $closeDate = $4 + 2000 . "-$2-$3";  print "closeDate $closeDate\n";
+   $self->set_stmtCloseDate( $closeDate, $yrMin, $yrMax );
+   }
+
+sub parse_new_txn { my ($self,$retxn,$txntype,$totalnm) = @_;
+   $self->{yrMin} or die "yrMin not defined prior to txn processing\n";
+   if( m"$retxn" ) {
+      $totalnm ||= $txntype;
+      my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, tocents($4));
+      $txpostdt =~ s!/!-!g;  # ISO8660 sep
+      $txpostdt = (($self->{yrMax} && $txpostdt =~ m"^01") ? $self->{yrMax} : $self->{yrMin}) . "-$txpostdt";  # prepend year
+      $txcents = 0 - $txcents if $sign eq '-';
+      $txdesc =~ s!\s\s+! # !g;
+      showtxn( $totalnm, $txpostdt, $txcents, $txdesc );
+      $self->add_txn( $txntype, $totalnm, $txpostdt, $txcents, $txdesc );
+      }
    }
 
 my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called helper method

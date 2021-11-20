@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 
 # run on output of `pdftotext -simple Citi_CreditCardStatement.pdf Citi_CreditCardStatement.p2t`
 # see %~dp0/CCStmtP2tToCsv.pm for details
@@ -17,27 +17,13 @@ my $rdt = '\d{2}/\d{2}';
 my $rdesc = '\w.*\w';
 my $rdamtcapt = '([\d,]*\.\d{2})';
 my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)\$$rdamtcapt\b";
+my $retxn = "^(?:$rdt)?$rtxn";
 
-my ($yrMin,$yrMax);
-sub add_txn { my ($self,$txntype,$totalnm) = @_;
-   defined($yrMin) or die "yrMin not defined prior to txn processing\n";
-   if( m"^(?:$rdt)?$rtxn" ) {
-      $totalnm ||= $txntype;
-      my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, CCStmtP2tToCsv::tocents($4));
-      $txpostdt =~ s!/!-!g;  # ISO8660 sep
-      $txpostdt = (($yrMax && $txpostdt =~ m"^01") ? $yrMax : $yrMin) . "-$txpostdt";  # prepend year
-      $txcents = 0 - $txcents if $sign eq '-';
-      $txdesc =~ s!\s\s+! # !g;
-      CCStmtP2tToCsv::showtxn( $totalnm, $txpostdt, $txcents, $txdesc );
-      $self->add_txn( $txntype, $totalnm, $txpostdt, $txcents, $txdesc );
-      }
+sub lp_Payments { # my $self = shift; $self->parse_new_txn( $retxn, 'credit' );  no way to cross-check credits in Citi stmts (because Citi stmts provide no total for credits)
    }
 
-sub lp_pymts { # my $self = shift; add_txn($self,'credit');
-   }
-
-my ($cardholder,%cardtotals);
-sub lp_chs { my $self = shift;
+my ($cardholder);  # multiline parse support
+sub lp_CardholderSummary { my $self = shift;
  # print "chs: $_\n" if $opts->{v};
    if( !defined($cardholder) ) {
       if( m"^($rdesc)\s+Card ending in\s+\d{4}" ) {
@@ -50,27 +36,24 @@ sub lp_chs { my $self = shift;
       print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opts->{v};
       $self->set_total( $cardholder, $cardtotal );
       my $ch_capt = $cardholder;  # required!
-      $self->add_section_hdr( $cardholder, sub { my $self = shift; add_txn( $self, 'charge', $ch_capt ); } );
+      $self->add_section_hdr( $cardholder, sub { my $self = shift; $self->parse_new_txn( $retxn, 'charge', $ch_capt ); } );
       $cardholder = undef;  # we're done with this $cardholder
       }
    }
 
 sub lp_ignore {;}
-sub lp_findyr { my $self = shift;
+sub lp_BillPeriod { my $self = shift;
    if( m"^\s*Billing\s+Period:\s+\d{2}/\d{2}/(\d{2})\-(\d{2})/(\d{2})/(\d{2})" ) { print "yrMin/yrMax raw $1/$4\n";
-      $yrMin = $1 + 2000;                    print "yrMin $yrMin\n";
-      $yrMax = $4 + 2000 if $1 ne $4;        print "yrMax $yrMax\n" if $yrMax;
-      my $closeDate = $4 + 2000 . "-$2-$3";  print "closeDate $closeDate\n";
-      $self->set_stmtCloseDate( $closeDate );
+      $self->set_stmtOpenCloseDates();
       }
    }
 
 my $init_key = '(start_of_file)';
 CCStmtP2tToCsv::process_stmt_p2t( shift,
    {
-   $init_key                                 => \&lp_findyr,
-   'CARDHOLDER\s+SUMMARY'                    => \&lp_chs,
-   'Payments,\s+Credits\s+and\s+Adjustments' => \&lp_pymts,
+   $init_key                                 => \&lp_BillPeriod,
+   'CARDHOLDER\s+SUMMARY'                    => \&lp_CardholderSummary,
+   'Payments,\s+Credits\s+and\s+Adjustments' => \&lp_Payments,
    'Fees\s+Charged'                          => \&lp_ignore,
    }, $init_key, [ qw( charge ) ], $opts
    );
