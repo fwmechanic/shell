@@ -32,10 +32,12 @@ EOT
    return \%opts;
    }
 
-sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops; any leading sign or $ shall have been stripped.
-   $dcstr =~ s/[,]//g;
-   my ($dol, $cents) = $dcstr =~ /^(\d*)\.(\d{2})$/;
-   return ((($dol || 0) * 100) + $cents);
+sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
+   $dcstr =~ s/[,\$]//g;
+   my ($sign,$dol, $cents) = $dcstr =~ /^([-+]?)(\d*)\.(\d{2})$/;
+   $cents = ((($dol || 0) * 100) + $cents);
+   $cents = 0 - $cents if $sign eq '-';
+   return $cents;
    }
 
 sub cents_to_dc_pretty { my ($cents) = @_; sprintf "%5d.%02d", $cents / 100, $cents % 100; }
@@ -58,8 +60,6 @@ sub cross_chk_totals { my ($stmtTotal,$accumdTxns,$anno) = @_;
       }
    }
 
-
-
 sub _updt_section_hdr_re { my $self = shift;  # private method
    my $reraw = '(?!)';  # never matches  https://stackoverflow.com/a/4589566
       $reraw = '^\s*(' . join( '|', sort keys %{$self->{section_parsers}} ) . ')\b' if %{$self->{section_parsers}};
@@ -77,6 +77,7 @@ sub _found_section_hdr { my $self = shift; my ($lphdr) = @_;
    return $lpsub;
    }
 sub add_section_hdr { my $self = shift; my ($hdr,$coderef) = @_;
+   print "add_section_hdr $hdr\n" if $self->{opts}{v};
    $hdr =~ s!\s+!\\s+!g;
    $self->{section_parsers}{ $hdr } = $coderef;
    $self->_updt_section_hdr_re();
@@ -101,9 +102,14 @@ sub add_txn { my $self = shift; my ($txtype,$totalnm,$postdate,$cents,$descr,$ct
    }
 
 sub set_total { my $self = shift; my ($txtype,$cents) = @_;
+   print "set_total $txtype = ", $cents_to_dc->($cents), "\n" if $self->{opts}{v};
    croak "multiple definitions of txnTypeTotal[$txtype]\n" if exists $self->{txnTypeTotal}{$txtype};
    $self->{txnTypeTotal}{$txtype} = $cents;
-   printf "total $txtype = %s\n", cents_to_dc_pretty($cents);
+   }
+
+sub add_total { my $self = shift; my ($txtype,$cents) = @_;  # some totals summed from multiple sources
+   $self->{txnTypeTotal}{$txtype} += $cents;
+   print "add_total $txtype = ", $cents_to_dc->($cents), ", now ", $cents_to_dc->($self->{txnTypeTotal}{$txtype}), "\n" if $self->{opts}{v};
    }
 
 sub set_stmtCloseDate { my $self = shift; my ($closeDate, $yrMin, $yrMax) = @_;
@@ -123,10 +129,9 @@ sub parse_new_txn { my ($self,$retxn,$txntype,$totalnm) = @_;
    $self->{yrMin} or die "yrMin not defined prior to txn processing\n";
    if( m"$retxn" ) {
       $totalnm ||= $txntype;
-      my ($txpostdt,$txdesc,$sign,$txcents) = ($1, $2, $3, tocents($4));
+      my ($txpostdt,$txdesc,$txcents) = ($1, $2, tocents($3));
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
       $txpostdt = (($self->{yrMax} && $txpostdt =~ m"^01") ? $self->{yrMax} : $self->{yrMin}) . "-$txpostdt";  # prepend year
-      $txcents = 0 - $txcents if $sign eq '-';
       $txdesc =~ s!\s\s+! # !g;
       showtxn( $totalnm, $txpostdt, $txcents, $txdesc );
       $self->add_txn( $txntype, $totalnm, $txpostdt, $txcents, $txdesc );
@@ -152,9 +157,14 @@ my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called help
    };
 
 my @allcsv;
-sub _rdAddlTxns { my $self = shift; my ($ifnx) = @_;
-   my $src = 'addltxns';
+sub _rdAddlTxns { my $self = shift; my ($ifnx, $ifx) = @_;
+   print "ifx $ifx\n\n";
+   my ($ifxsuffix) = $ifx =~ m"[^\-]+(\-[^\-]+)$";
+ # my ($ifxprefix,$ifxsuffix) = split( /-/, $ifx, 2 );
+   my $src  = 'addltxns';
+      $src .= $ifxsuffix if $ifxsuffix;
    my $addltxnfnm = $ifnx . $src;
+   print "addltxnfnm $addltxnfnm\n\n";
    if( -e $addltxnfnm ) {
       print "addltxnfnm $addltxnfnm\n\n";
       my $rdesc = '\w.*\w';
@@ -172,11 +182,12 @@ sub _rdAddlTxns { my $self = shift; my ($ifnx) = @_;
       }
    }
 sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts) = @_;
+   print "p2tfnm $p2tfnm\n\n";
    -e $p2tfnm or croak "$p2tfnm is not a file\n";
    # does not produce desired results:
    # my($ifnmname, $ifnmdirs, $ifnmsuffix) = fileparse($ifnm);
    # print "$ifnm, $ifnmname, $ifnmdirs, $ifnmsuffix\n";
-   my ($ifnx) = $p2tfnm =~ m"(.+\.)[^.]+$";
+   my ($ifnx,$ifx) = $p2tfnm =~ m"(.+\.)([^\.]+)$";
    my $self = {
       p2tfnm => $p2tfnm,
       section_parsers => $spref,
@@ -186,7 +197,8 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
    bless $self;
    require './AccountId.pl' or die;
    $self->{acctId} = &AccountId;  # print "acctId $self->{acctId}\n";
-   $self->_rdAddlTxns( $ifnx );
+ # $self->_rdAddlTxns( $ifnx, $ifx ) unless $opts->{n};
+   $self->_rdAddlTxns( $ifnx, $ifx );
    print "$p2tfnm\n\n";
    {
    open my $ifh, '<', $p2tfnm or croak "abend cannot open $p2tfnm for reading: $!\n";
@@ -244,8 +256,6 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
    print "\ndone with $p2tfnm\n\n";
    push @allcsv, @csvLines;
    }
-
-
 
 sub write_all_csv {
    my $ofnm = 'all.csv';

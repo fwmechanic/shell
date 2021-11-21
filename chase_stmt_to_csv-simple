@@ -14,18 +14,18 @@ my $opts = CCStmtP2tToCsv::getopts();
 
 my $rdt = '\d{2}/\d{2}';
 my $rdesc = '\w.*\w';
-my $rdamtcapt = '([\d,]*\.\d{2})';
-my $rtxn = qr"\s+($rdt)\s+($rdesc)\s+(\-?)$rdamtcapt\b";
-my $retxn = "^$rtxn";
+my $rpmdamtcapt = '\s+([-+]?\$?[\d,]*\.\d{2})\b';
+my $rtxn = qr"\s+($rdt)\s+($rdesc)$rpmdamtcapt";
+my $retxn = "^(?:$rdt)?$rtxn";
 
 for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sorted (assumes stmt filenames are validly date-sortable)
    my $lp_ignore = sub {;};
    my $lp_AcctSummary = sub { my $self = shift;  # print "lp_AcctSummary $_\n";
       s/(\w)`(\w)/$1$2/; # VERY strange translation issue
-      if( m"^\s*Payment,\s+Credits\s+(?:\-)?\$([\d,]+\.\d{2})" ) { print  "pymttot raw $1\n";
-         $self->set_total( 'credit', - CCStmtP2tToCsv::tocents($1) );
+      if( m"^\s*Payment,\s+Credits$rpmdamtcapt" ) { print  "pymttot raw $1\n";
+         $self->set_total( 'credit',   CCStmtP2tToCsv::tocents($1) );
          }
-      elsif( m"^\s*Purchases\s+(?:\+)?\$([\d,]+\.\d{2})" ) {  print  "purchtot raw $1\n";
+      elsif( m"^\s*Purchases$rpmdamtcapt" ) {  print  "purchtot raw $1\n";
          $self->set_total( 'purchase', CCStmtP2tToCsv::tocents($1) );
          }
     # elsif( m"^\s*Account Number:\s+\d{4} \d{4} \d{4} (\d{4})\b" ) {  print "acctnum $1\n";

@@ -1,0 +1,72 @@
+#!/usr/bin/perl
+
+# run on output of `pdftotext -simple Citi_CreditCardStatement.pdf Citi_CreditCardStatement.p2t`
+# see %~dp0/CCStmtP2tToCsv.pm for details
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib $FindBin::Bin;
+use CCStmtP2tToCsv;
+
+my $opts = CCStmtP2tToCsv::getopts();
+$opts->{n} = 1; # disable read of addltxns file
+
+my $rdt = '\d{2}/\d{2}';
+my $rdesc = '\w.*\w';
+my $rpmdamtcapt = '\s+([-+]?\$?[\d,]*\.\d{2})\b';
+my $rtxn = qr"\s+($rdt)\s+($rdesc)$rpmdamtcapt";
+my $retxn = "^(?:$rdt)?$rtxn";
+
+for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sorted (assumes stmt filenames are validly date-sortable)
+   my $lp_Payments = sub { my $self = shift; $self->parse_new_txn( $retxn, 'credit' ); };
+   my ($cardholder);  # multiline parse support
+   my $lp_CardholderSummary = sub { my $self = shift;
+    # print "chs: $_\n" if $opts->{v};
+      if( !defined($cardholder) ) {
+         if( m"^($rdesc)\s+Card\s+ending\s+in\s+\d{4}" ) {
+            $cardholder = $1;
+            print "cardholder = $cardholder\n" if $opts->{v};
+            }
+         }
+      elsif( m"^New Charges$rpmdamtcapt" ) {
+         my $cardtotal = CCStmtP2tToCsv::tocents( $1 );  # for cross-checking
+         print "cardholder = $cardholder; cardtotal = $cardtotal\n" if $opts->{v};
+         $self->set_total( $cardholder, $cardtotal );
+         my $ch_capt = $cardholder;  # required!
+         $self->add_section_hdr( $cardholder, sub { my $self = shift; $self->parse_new_txn( $retxn, 'charge', $ch_capt ); } );
+         $cardholder = undef;  # we're done with this $cardholder
+         }
+      };
+   my $lp_ignore = sub {;};
+   my $AccountSummary = sub { my $self = shift;
+      if(    m"Payments$rpmdamtcapt" ) {
+         $self->add_total( 'credit'  , CCStmtP2tToCsv::tocents( $1 ) );
+         }
+      if(    m"Credits$rpmdamtcapt" ) {
+         $self->add_total( 'credit'  , CCStmtP2tToCsv::tocents( $1 ) );
+         }
+      elsif( m"Purchases$rpmdamtcapt" ) {
+         $self->set_total( 'purchase', CCStmtP2tToCsv::tocents( $1 ) );
+         }
+      };
+   my $lp_BillPeriod = sub { my $self = shift;
+      if( m"^\s*Billing\s+Period:\s+\d{2}/\d{2}/(\d{2})\-(\d{2})/(\d{2})/(\d{2})" ) { print "yrMin/yrMax raw $1/$4\n";
+         $self->set_stmtOpenCloseDates();
+         my $ASHdr = sprintf "%s STATEMENT Account Summary", qw(JANUARY FEBRUARY MARCH APRIL MAY JUNE JULY AUGUST SEPTEMBER OCTOBER NOVEMBER DECEMBER)[0+($2 =~ s!^0!!r)-1];
+         $self->add_section_hdr( $ASHdr, $AccountSummary );
+
+         }
+      };
+   my $init_key = '(start_of_file)';
+   CCStmtP2tToCsv::process_stmt_p2t( shift,
+      {
+      $init_key                                 => $lp_BillPeriod,
+      'CARDHOLDER\s+SUMMARY'                    => $lp_CardholderSummary,
+      'Payments,\s+Credits\s+and\s+Adjustments' => $lp_Payments,
+      'Fees\s+Charged'                          => $lp_ignore,
+      }, $init_key, [ qw( charge ) ], $opts
+      );
+   }
+CCStmtP2tToCsv::write_all_csv() if @ARGV > 1;
