@@ -63,27 +63,27 @@ sub cross_chk_totals { my ($stmtTotal,$accumdTxns,$anno) = @_;
 sub _updt_section_hdr_re { my $self = shift;  # private method
    my $reraw = '(?!)';  # never matches  https://stackoverflow.com/a/4589566
       $reraw = '^\s*(' . join( '|', sort keys %{$self->{section_parsers}} ) . ')\b' if %{$self->{section_parsers}};
-   print "updt_section_hdr_re = $reraw\n" if $self->{opts}{v};
+   print "updt_section_hdr_re = $reraw\n"; # if $self->{opts}{v};
    $self->{section_hdr_re} = qr{$reraw};
    }
 sub _found_section_hdr { my $self = shift; my ($lphdr) = @_;
    my ($lpnorm) = $lphdr =~ s!\s+! !gr;
    my ($lprex ) = $lphdr =~ s!\s+!\\s+!gr;
    croak "$lphdr missing!\n" unless exists $self->{section_parsers}{ $lprex };
-   print "lineparser = $lpnorm\n" if $self->{opts}{v};
+   print "lineparser = $lpnorm\n" ; # if $self->{opts}{v};
    my $lpsub = delete( $self->{section_parsers}{ $lprex } );
    $self->_updt_section_hdr_re();
    push @{$self->{sections_seen}}, $lpnorm;
    return $lpsub;
    }
 sub add_section_hdr { my $self = shift; my ($hdr,$coderef) = @_;
-   print "add_section_hdr $hdr\n" if $self->{opts}{v};
+   print "add_section_hdr $hdr\n" ; # if $self->{opts}{v};
    $hdr =~ s!\s+!\\s+!g;
    $self->{section_parsers}{ $hdr } = $coderef;
    $self->_updt_section_hdr_re();
    }
 sub rmv_section_hdr { my $self = shift; my ($lprex) = @_;
-   print "rmv_section_hdr $lprex\n" if $self->{opts}{v};
+   print "rmv_section_hdr $lprex\n" ; # if $self->{opts}{v};
    delete( $self->{section_parsers}{ $lprex } );
    }
 sub _section_parsers_report { my $self = shift;
@@ -97,9 +97,11 @@ sub _section_parsers_report { my $self = shift;
       }
    }
 sub add_txn { my $self = shift; my ($txtype,$totalnm,$postdate,$cents,$descr,$ctx,$src) = @_;
+   my $patched = ' ';
    if( defined $self->{patchDesc}{$txtype}{$descr} ) {
       delete( $self->{patchDescMiss}{"$txtype,$descr"} );
       $descr = $self->{patchDesc}{$txtype}{$descr};
+      $patched = '!';
       }
    my %txn = ( txtype=>$txtype, totalnm=>$totalnm, date=>$postdate, cents=>$cents, description=>$descr );
    $txn{context} = $ctx if defined $ctx;
@@ -107,9 +109,7 @@ sub add_txn { my $self = shift; my ($txtype,$totalnm,$postdate,$cents,$descr,$ct
    push @{$self->{txnByDate}{$txtype}{$postdate}}, \%txn;
    push @{$self->{txnByTotal}{$totalnm}}, \%txn;
    $self->{totalnmToTxtype}{$totalnm} ||= $txtype;
-
-   printf "%s: %s %s %s\n", $self->anno_for_totalnm( $totalnm ), $postdate, cents_to_dc_pretty($cents), $descr;
-
+   printf "add_txn %s: %s %s %s%s\n", $self->anno_for_totalnm( $totalnm ), $postdate, cents_to_dc_pretty($cents), $patched, $descr;
    }
 
 sub patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
@@ -118,15 +118,14 @@ sub patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
    $self->{patchDescMiss}{"$txtype,$from"} = 1;
    }
 
-sub set_total { my $self = shift; my ($txtype,$cents) = @_;
-   print "set_total $txtype = ", $cents_to_dc->($cents), "\n" if $self->{opts}{v};
+sub set_total { my $self = shift; my ($txtype,$dcstr) = @_; my $cents = tocents($dcstr);
+   print "set_total $txtype = ", $cents_to_dc->($cents), "\n" ; # if $self->{opts}{v};
    croak "multiple definitions of txnTypeTotal[$txtype]\n" if exists $self->{txnTypeTotal}{$txtype};
    $self->{txnTypeTotal}{$txtype} = $cents;
    }
-
-sub add_total { my $self = shift; my ($txtype,$cents) = @_;  # some totals summed from multiple sources
+sub add_total { my $self = shift; my ($txtype,$dcstr) = @_; my $cents = tocents($dcstr);  # some totals summed from multiple sources
    $self->{txnTypeTotal}{$txtype} += $cents;
-   print "add_total $txtype = ", $cents_to_dc->($cents), ", now ", $cents_to_dc->($self->{txnTypeTotal}{$txtype}), "\n" if $self->{opts}{v};
+   print "add_total $txtype = ", $cents_to_dc->($cents), ", now ", $cents_to_dc->($self->{txnTypeTotal}{$txtype}), "\n" ; # if $self->{opts}{v};
    }
 
 sub set_stmtCloseDate { my $self = shift; my ($closeDate, $yrMin, $yrMax) = @_;
@@ -220,7 +219,6 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
    bless $self;
    require './AccountId.pl' or die;
    $self->{acctId} = &AccountId;  # print "acctId $self->{acctId}\n";
- # $self->_rdAddlTxns( $ifnx, $ifx ) unless $opts->{n};
    $self->_rdAddlTxns( $ifnx, $ifx );
    print "$p2tfnm\n\n";
    {

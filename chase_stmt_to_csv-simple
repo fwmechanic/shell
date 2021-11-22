@@ -22,15 +22,9 @@ for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sort
    my $lp_ignore = sub {;};
    my $lp_AcctSummary = sub { my $self = shift;  # print "lp_AcctSummary $_\n";
       s/(\w)`(\w)/$1$2/; # VERY strange translation issue
-      if( m"^\s*Payment,\s+Credits$rpmdamtcapt" ) { print  "pymttot raw $1\n";
-         $self->set_total( 'credit',   CCStmtP2tToCsv::tocents($1) );
-         }
-      elsif( m"^\s*Purchases$rpmdamtcapt" ) {  print  "purchtot raw $1\n";
-         $self->set_total( 'purchase', CCStmtP2tToCsv::tocents($1) );
-         }
-    # elsif( m"^\s*Account Number:\s+\d{4} \d{4} \d{4} (\d{4})\b" ) {  print "acctnum $1\n";
-    #    my $acctnum = $1;  # now obtained from ./AccountId.pl, but may be cross-checked in the future...
-    #    }
+      if(    m"^\s*Payment,\s+Credits$rpmdamtcapt" ) { $self->set_total( 'credit'  , $1 ); }
+      elsif( m"^\s*Purchases$rpmdamtcapt"          ) { $self->set_total( 'purchase', $1 ); }
+    # elsif( m"^\s*Account Number:\s+\d{4} \d{4} \d{4} (\d{4})\b" ) {  print "acctnum $1\n"; my $acctnum = $1; } # now obtained from ./AccountId.pl, but may be cross-checked in the future...
       elsif( m"^\s*Opening/Closing Date\s+\d{2}/\d{2}/(\d{2})\s+\-\s+(\d{2})/(\d{2})/(\d{2})" ) { print "yrMin/yrMax raw $1/$4\n";
          $self->set_stmtOpenCloseDates();
          }
