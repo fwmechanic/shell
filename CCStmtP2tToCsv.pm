@@ -32,6 +32,11 @@ EOT
    return \%opts;
    }
 
+sub anno_for_totalnm { my $self = shift; my ($totalnm) = @_;
+   my $rv = $self->{totalnmToTxtype}{$totalnm} eq $totalnm ? $totalnm : $self->{totalnmToTxtype}{$totalnm} .'::'. $totalnm;
+   return sprintf( "%-25s", $rv );
+   }
+
 sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
    $dcstr =~ s/[,\$]//g;
    my ($sign,$dol, $cents) = $dcstr =~ /^([-+]?)(\d*)\.(\d{2})$/;
@@ -43,12 +48,7 @@ sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact fl
 sub cents_to_dc_pretty { my ($cents) = @_; sprintf "%5d.%02d", $cents / 100, $cents % 100; }
 my $cents_to_dc = sub  { my ($cents) = @_; sprintf  "%d.%02d", $cents / 100, $cents % 100; };
 
-sub showtxn { my ($holder,$dt,$txcents,$desc) = @_;
-   printf "%-17s: %s %s %s\n", $holder, $dt, cents_to_dc_pretty($txcents), $desc;
-   }
-
 sub cross_chk_totals { my ($stmtTotal,$accumdTxns,$anno) = @_;
-   $anno = sprintf "%-26s", $anno;
    if( $stmtTotal != $accumdTxns ) {
       printf "**************************************************************************************\n";
       printf "cross-check $anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns), cents_to_dc_pretty($stmtTotal - $accumdTxns);
@@ -82,6 +82,10 @@ sub add_section_hdr { my $self = shift; my ($hdr,$coderef) = @_;
    $self->{section_parsers}{ $hdr } = $coderef;
    $self->_updt_section_hdr_re();
    }
+sub rmv_section_hdr { my $self = shift; my ($lprex) = @_;
+   print "rmv_section_hdr $lprex\n" if $self->{opts}{v};
+   delete( $self->{section_parsers}{ $lprex } );
+   }
 sub _section_parsers_report { my $self = shift;
    printf "\n%d section_parsers used:\n", scalar @{$self->{sections_seen}};
    for my $lpnorm ( sort @{$self->{sections_seen}} ) {
@@ -93,12 +97,25 @@ sub _section_parsers_report { my $self = shift;
       }
    }
 sub add_txn { my $self = shift; my ($txtype,$totalnm,$postdate,$cents,$descr,$ctx,$src) = @_;
+   if( defined $self->{patchDesc}{$txtype}{$descr} ) {
+      delete( $self->{patchDescMiss}{"$txtype,$descr"} );
+      $descr = $self->{patchDesc}{$txtype}{$descr};
+      }
    my %txn = ( txtype=>$txtype, totalnm=>$totalnm, date=>$postdate, cents=>$cents, description=>$descr );
    $txn{context} = $ctx if defined $ctx;
    $txn{srcdoc}  = $src if defined $src;
    push @{$self->{txnByDate}{$txtype}{$postdate}}, \%txn;
    push @{$self->{txnByTotal}{$totalnm}}, \%txn;
    $self->{totalnmToTxtype}{$totalnm} ||= $txtype;
+
+   printf "%s: %s %s %s\n", $self->anno_for_totalnm( $totalnm ), $postdate, cents_to_dc_pretty($cents), $descr;
+
+   }
+
+sub patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
+   print "patch_txn_desc $txtype, $from, $to\n";
+   $self->{patchDesc}{$txtype}{$from} = $to;
+   $self->{patchDescMiss}{"$txtype,$from"} = 1;
    }
 
 sub set_total { my $self = shift; my ($txtype,$cents) = @_;
@@ -132,8 +149,7 @@ sub parse_new_txn { my ($self,$retxn,$txntype,$totalnm) = @_;
       my ($txpostdt,$txdesc,$txcents) = ($1, $2, tocents($3));
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
       $txpostdt = (($self->{yrMax} && $txpostdt =~ m"^01") ? $self->{yrMax} : $self->{yrMin}) . "-$txpostdt";  # prepend year
-      $txdesc =~ s!\s\s+! # !g;
-      showtxn( $totalnm, $txpostdt, $txcents, $txdesc );
+      $txdesc =~ s!\s\s+! !g;
       $self->add_txn( $txntype, $totalnm, $txpostdt, $txcents, $txdesc );
       }
    }
@@ -168,14 +184,21 @@ sub _rdAddlTxns { my $self = shift; my ($ifnx, $ifx) = @_;
    if( -e $addltxnfnm ) {
       print "addltxnfnm $addltxnfnm\n\n";
       my $rdesc = '\w.*\w';
+      my $rentry = "($rdesc)".':\s+(\d{4}\-\d{2}\-\d{2})\s+(\d+)\s+'."($rdesc)";
       open my $ifh, '<', $addltxnfnm or die "abend cannot open $addltxnfnm for reading: $!\n";
-      while (my $line = <$ifh>) {
-         chomp $line;
-         if( $line =~ m"\S" ) {
-            my ($holder,$dt,$txcents,$desc) = $line =~ m"^($rdesc):\s+(\d{4}\-\d{2}\-\d{2})\s+(\d+)\s+($rdesc)";
-            die "bad format in $addltxnfnm: $_\n" unless $desc;
-            showtxn( $holder,$dt,$txcents,$desc );
-            $self->add_txn( 'charge', $holder, $dt, $txcents, $desc, $holder, $src );
+      while( <$ifh> ) {
+         chomp;
+         if( m"\S" ) {
+            if( m"^(?:add:\s+)?$rentry" ) {
+               my ($holder,$dt,$txcents,$desc) = ($1, $2, $3, $4);
+               $self->add_txn( 'charge', $holder, $dt, $txcents, $desc, $holder, $src );
+               }
+            elsif( m"^(?:desc:\s+)($rdesc)\s*\|\s*($rdesc)" ) {
+               my ($from,$to) = ($1, $2);
+               print "patch desc: $from -> $to\n";
+               $self->patch_txn_desc( 'charge', $from, $to );
+               }
+            else { die "bad format in $addltxnfnm: $_\n"; }
             }
          }
       print "\n";
@@ -218,12 +241,20 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
 
    print "\ncross-checking\n\n";
 
+ # for my $txtype ( sort keys %{$self->{txnTypeTotal}} ) {
+ #    }
+
    for my $totalnm ( sort keys %{$self->{txnByTotal}} ) {
       defined($self->{txnTypeTotal}{$totalnm}) or croak "totalnm $totalnm has no total\n";
       $self->{txnTypeTotal}{$totalnm} == 0 or defined($self->{txnByTotal}{$totalnm}) or croak "txtype $totalnm has no txns\n";
       my $txsum = 0; map { $txsum += $_->{cents} } @{$self->{txnByTotal}{$totalnm}};
-      my $anno = $self->{totalnmToTxtype}{$totalnm} eq $totalnm ? $totalnm : $self->{totalnmToTxtype}{$totalnm} .'::'. $totalnm;
-      cross_chk_totals( $self->{txnTypeTotal}{$totalnm} || 0, $txsum, $anno );
+      cross_chk_totals( $self->{txnTypeTotal}{$totalnm} || 0, $txsum, $self->anno_for_totalnm( $totalnm ) );
+      }
+
+   if( exists( $self->{patchDescMiss} ) && %{$self->{patchDescMiss}} ) {
+      print "desc patches were provided which were not applied:\n";
+      print "  $_\n" for ( sort keys %{$self->{patchDescMiss}} );
+      die "\n";
       }
 
    $self->_section_parsers_report();
