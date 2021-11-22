@@ -32,11 +32,6 @@ EOT
    return \%opts;
    }
 
-sub anno_for_totalnm { my $self = shift; my ($totalnm) = @_;
-   my $rv = $self->{totalnmToTxtype}{$totalnm} eq $totalnm ? $totalnm : $self->{totalnmToTxtype}{$totalnm} .'::'. $totalnm;
-   return sprintf( "%-25s", $rv );
-   }
-
 sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
    $dcstr =~ s/[,\$]//g;
    my ($sign,$dol, $cents) = $dcstr =~ /^([-+]?)(\d*)\.(\d{2})$/;
@@ -49,6 +44,7 @@ sub cents_to_dc_pretty { my ($cents) = @_; sprintf "%5d.%02d", $cents / 100, $ce
 my $cents_to_dc = sub  { my ($cents) = @_; sprintf  "%d.%02d", $cents / 100, $cents % 100; };
 
 sub cross_chk_totals { my ($stmtTotal,$accumdTxns,$anno) = @_;
+   $anno = sprintf '%-25s', $anno;
    if( $stmtTotal != $accumdTxns ) {
       printf "**************************************************************************************\n";
       printf "cross-check $anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns), cents_to_dc_pretty($stmtTotal - $accumdTxns);
@@ -96,20 +92,25 @@ sub _section_parsers_report { my $self = shift;
       print "   ", $lprex =~ s!\Q\s+! !gr, "\n";
       }
    }
-sub add_txn { my $self = shift; my ($txtype,$totalnm,$postdate,$cents,$descr,$ctx,$src) = @_;
+sub add_txn { my $self = shift; my ($aref,$postdate,$cents,$descr,$ctx,$src) = @_;
    my $patched = ' ';
+   {
+   my $txtype = $aref->[0];  # hack
    if( defined $self->{patchDesc}{$txtype}{$descr} ) {
       delete( $self->{patchDescMiss}{"$txtype,$descr"} );
       $descr = $self->{patchDesc}{$txtype}{$descr};
       $patched = '!';
       }
-   my %txn = ( txtype=>$txtype, totalnm=>$totalnm, date=>$postdate, cents=>$cents, description=>$descr );
+   }
+   my $txcat = join( '::', @$aref );
+   my %txn = ( txcat=>$txcat, date=>$postdate, cents=>$cents, description=>$descr );
    $txn{context} = $ctx if defined $ctx;
    $txn{srcdoc}  = $src if defined $src;
-   push @{$self->{txnByDate}{$txtype}{$postdate}}, \%txn;
-   push @{$self->{txnByTotal}{$totalnm}}, \%txn;
-   $self->{totalnmToTxtype}{$totalnm} ||= $txtype;
-   printf "add_txn %s: %s %s %s%s\n", $self->anno_for_totalnm( $totalnm ), $postdate, cents_to_dc_pretty($cents), $patched, $descr;
+   push @{$self->{txnByDate}{$txcat}{$postdate}}, \%txn;
+
+   $self->_add_total( 'txnTotal', $aref, $cents );
+
+   printf "add_txn %s: %s %s %s%s\n", $txcat, $postdate, cents_to_dc_pretty($cents), $patched, $descr;
    }
 
 sub patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
@@ -118,14 +119,31 @@ sub patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
    $self->{patchDescMiss}{"$txtype,$from"} = 1;
    }
 
-sub set_total { my $self = shift; my ($txtype,$dcstr) = @_; my $cents = tocents($dcstr);
-   print "set_total $txtype = ", $cents_to_dc->($cents), "\n" ; # if $self->{opts}{v};
-   croak "multiple definitions of txnTypeTotal[$txtype]\n" if exists $self->{txnTypeTotal}{$txtype};
-   $self->{txnTypeTotal}{$txtype} = $cents;
+sub _add_total { my $self = shift; my ($selfKey,$aref,$cents) = @_;
+   print Data::Dumper->Dump([ $self->{$selfKey} ], [ 'before '.$selfKey ]), "\n";
+   my $hr = $self->{$selfKey};
+   for( my $ix = 0; $ix < scalar @$aref; ++$ix ) {
+      my $key = join('::', @$aref[0..$ix]);
+      print "  $key += $cents", "\n";
+      # print Data::Dumper->Dump([ $hr ], [qw(hr)]), "\n";
+      $hr->{$key} += $cents;
+      }
+   print Data::Dumper->Dump([ $self->{$selfKey} ], [ 'after  '.$selfKey ]), "\n";
+   return join('::', @$aref);
    }
-sub add_total { my $self = shift; my ($txtype,$dcstr) = @_; my $cents = tocents($dcstr);  # some totals summed from multiple sources
-   $self->{txnTypeTotal}{$txtype} += $cents;
-   print "add_total $txtype = ", $cents_to_dc->($cents), ", now ", $cents_to_dc->($self->{txnTypeTotal}{$txtype}), "\n" ; # if $self->{opts}{v};
+
+sub set_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = tocents($dcstr);
+   my $key = join('::', @$aref);
+   print "set_total $key = ", $cents_to_dc->($cents), "\n" ; # if $self->{opts}{v};
+   die "multiple definitions of stmtTotal[$key]\n" if exists $self->{stmtTotal}{$key};
+   $self->{stmtTotal}{$key} = $cents;
+   print Data::Dumper->Dump([ $self->{stmtTotal} ], [ 'stmtTotal.after' ]), "\n";
+   }
+sub add_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = tocents($dcstr);  # some totals summed from multiple sources
+   my $key = join('::', @$aref);
+   print "add_total $key = ", $cents_to_dc->($cents), "\n" ; # if $self->{opts}{v};
+   $self->{stmtTotal}{$key} += $cents;
+   print Data::Dumper->Dump([ $self->{stmtTotal} ], [ 'stmtTotal.after' ]), "\n";
    }
 
 sub set_stmtCloseDate { my $self = shift; my ($closeDate, $yrMin, $yrMax) = @_;
@@ -141,15 +159,16 @@ sub set_stmtOpenCloseDates { my $self = shift; # my ($closeDate, $yrMin, $yrMax)
    $self->set_stmtCloseDate( $closeDate, $yrMin, $yrMax );
    }
 
-sub parse_new_txn { my ($self,$retxn,$txntype,$totalnm) = @_;
+sub parse_new_txn { my $self = shift; my ($retxn,$aref) = @_;
    $self->{yrMin} or die "yrMin not defined prior to txn processing\n";
    if( m"$retxn" ) {
-      $totalnm ||= $txntype;
+      print "parse_new_txn $1, $2, $3\n";
       my ($txpostdt,$txdesc,$txcents) = ($1, $2, tocents($3));
+      print "parse_new_txn $txpostdt, $txdesc, $txcents\n";
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
       $txpostdt = (($self->{yrMax} && $txpostdt =~ m"^01") ? $self->{yrMax} : $self->{yrMin}) . "-$txpostdt";  # prepend year
       $txdesc =~ s!\s\s+! !g;
-      $self->add_txn( $txntype, $totalnm, $txpostdt, $txcents, $txdesc );
+      $self->add_txn( $aref, $txpostdt, $txcents, $txdesc );
       }
    }
 
@@ -190,7 +209,7 @@ sub _rdAddlTxns { my $self = shift; my ($ifnx, $ifx) = @_;
          if( m"\S" ) {
             if( m"^(?:add:\s+)?$rentry" ) {
                my ($holder,$dt,$txcents,$desc) = ($1, $2, $3, $4);
-               $self->add_txn( 'charge', $holder, $dt, $txcents, $desc, $holder, $src );
+               $self->add_txn( ['charge', $holder], $dt, $txcents, $desc, $holder, $src );
                }
             elsif( m"^(?:desc:\s+)($rdesc)\s*\|\s*($rdesc)" ) {
                my ($from,$to) = ($1, $2);
@@ -214,6 +233,9 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
       p2tfnm => $p2tfnm,
       section_parsers => $spref,
       sections_seen => [],
+      txnByCat => {},
+      txnTotal => {},
+      stmtTotal => {},
       opts => $opts,
       };
    bless $self;
@@ -239,14 +261,16 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
 
    print "\ncross-checking\n\n";
 
- # for my $txtype ( sort keys %{$self->{txnTypeTotal}} ) {
- #    }
+   print Data::Dumper->Dump([$self->{stmtTotal},$self->{txnTotal}], [qw(stmtTotal txnTotal)]);
 
-   for my $totalnm ( sort keys %{$self->{txnByTotal}} ) {
-      defined($self->{txnTypeTotal}{$totalnm}) or croak "totalnm $totalnm has no total\n";
-      $self->{txnTypeTotal}{$totalnm} == 0 or defined($self->{txnByTotal}{$totalnm}) or croak "txtype $totalnm has no txns\n";
-      my $txsum = 0; map { $txsum += $_->{cents} } @{$self->{txnByTotal}{$totalnm}};
-      cross_chk_totals( $self->{txnTypeTotal}{$totalnm} || 0, $txsum, $self->anno_for_totalnm( $totalnm ) );
+   my %xchkd;
+   for my $catkey ( sort keys %{$self->{stmtTotal}} ) {
+      $xchkd{$catkey} = 1;
+      cross_chk_totals( $self->{stmtTotal}{$catkey}, $self->{txnTotal}{$catkey} || 0, $catkey );
+      }
+   for my $catkey ( sort keys %{$self->{txnTotal}} ) {
+      next if exists $xchkd{$catkey};
+      cross_chk_totals( 0, $self->{txnTotal}{$catkey}, $catkey );
       }
 
    if( exists( $self->{patchDescMiss} ) && %{$self->{patchDescMiss}} ) {
