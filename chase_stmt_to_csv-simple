@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# run on output of `pdftotext -simple Chase_CreditCardStatement.pdf Chase_CreditCardStatement.p2t`
+# run on output of `pdftotext -simple Chase_CreditCardStatement.pdf Chase_CreditCardStatement.p2t-simple`
 # see %~dp0/CCStmtP2tToCsv.pm for details
 
 use strict;

@@ -6,7 +6,11 @@ package CCStmtP2tToCsv;
 # (in the case perhaps ONLY of this particular CC company's PDF statement)!
 # What's left is to slice and dice the "simple" output.  It's only a bit hacky.
 
-# run on output of `pdftotext -simple CreditCardStatement.pdf`
+# client programs of this library:
+# %~dp0/citi_stmt_to_csv-table
+# %~dp0/chase_stmt_to_csv-simple
+
+# run on output of `pdftotext -simple/-table CreditCardStatement.pdf`
 
 use strict;
 use warnings;
@@ -32,40 +36,40 @@ EOT
    return \%opts;
    }
 
-sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
+my $tocents = sub { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
    $dcstr =~ s/[,\$]//g;
    my ($sign,$dol, $cents) = $dcstr =~ /^([-+]?)(\d*)\.(\d{2})$/;
    $cents = ((($dol || 0) * 100) + $cents);
    $cents = 0 - $cents if $sign eq '-';
    return $cents;
-   }
+   };
 
-sub cents_to_dc_pretty { my ($cents) = @_; sprintf "%5d.%02d", $cents / 100, $cents % 100; }
-my $cents_to_dc = sub  { my ($cents) = @_; sprintf  "%d.%02d", $cents / 100, $cents % 100; };
+my $cents_to_dc_pretty = sub { my ($cents) = @_; sprintf "%5d.%02d", $cents / 100, $cents % 100; };
+my $cents_to_dc        = sub { my ($cents) = @_; sprintf  "%d.%02d", $cents / 100, $cents % 100; };
 
-sub genkey { my $self = shift; my $aref = shift;
+sub _genkey { my $self = shift; my $aref = shift;
    my $rv = join( '::', @$aref );
    $self->{maxkeylen} = length($rv) unless exists $self->{maxkeylen} && $self->{maxkeylen} > length($rv);
    return ($rv, sprintf( '%-*s', $self->{maxkeylen}, $rv ));
    }
 
-sub cross_chk_totals { my ($self,$stmtTotal,$accumdTxns,$anno) = @_;
+sub _cross_chk_totals { my ($self,$stmtTotal,$accumdTxns,$anno) = @_;
    $anno = sprintf '%-*s', $self->{maxkeylen}, $anno;
    if( $stmtTotal != $accumdTxns ) {
       printf "**************************************************************************************\n";
-      printf "cross-check $anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns), cents_to_dc_pretty($stmtTotal - $accumdTxns);
+      printf "cross-check $anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", $cents_to_dc_pretty->($stmtTotal), $cents_to_dc_pretty->($accumdTxns), $cents_to_dc_pretty->($stmtTotal - $accumdTxns);
       printf "**************************************************************************************\n";
       exit(1);
       }
    else {
-      printf "cross-check $anno: stmtTotal (%s) == accumdTxns (%s) same\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns);
+      printf "cross-check $anno: stmtTotal (%s) == accumdTxns (%s) same\n", $cents_to_dc_pretty->($stmtTotal), $cents_to_dc_pretty->($accumdTxns);
       }
    }
 
-sub _updt_section_hdr_re { my $self = shift;  # private method
+sub _updt_section_hdr_re { my $self = shift;
    my $reraw = '(?!)';  # never matches  https://stackoverflow.com/a/4589566
       $reraw = '^\s*(' . join( '|', sort keys %{$self->{section_parsers}} ) . ')\b' if %{$self->{section_parsers}};
-   print "updt_section_hdr_re = $reraw\n"; # if $self->{opts}{v};
+   print "updt_section_hdr_re = $reraw\n" if $self->{opts}{v};
    $self->{section_hdr_re} = qr{$reraw};
    }
 sub _found_section_hdr { my $self = shift; my ($lphdr) = @_;
@@ -86,7 +90,7 @@ sub add_section_hdr { my $self = shift; my ($hdr,$coderef) = @_;
    }
 sub rmv_section_hdr { my $self = shift; my ($lprex) = @_;
    print "rmv_section_hdr $lprex\n" ; # if $self->{opts}{v};
-   delete( $self->{section_parsers}{ $lprex } );
+   $self->_updt_section_hdr_re() if delete( $self->{section_parsers}{ $lprex } );
    }
 sub _section_parsers_report { my $self = shift;
    printf "\n%d section_parsers used:\n", scalar @{$self->{sections_seen}};
@@ -108,7 +112,7 @@ sub add_txn { my $self = shift; my ($aref,$postdate,$cents,$descr,$ctx,$src) = @
       $patched = '!';
       }
    }
-   my ($txcat,$dispcat) = $self->genkey( $aref );
+   my ($txcat,$dispcat) = $self->_genkey( $aref );
    my %txn = ( txcat=>$txcat, date=>$postdate, cents=>$cents, description=>$descr );
    $txn{context} = $ctx if defined $ctx;
    $txn{srcdoc}  = $src if defined $src;
@@ -123,58 +127,55 @@ sub add_txn { my $self = shift; my ($aref,$postdate,$cents,$descr,$ctx,$src) = @
       }
    # print Data::Dumper->Dump([ $self->{txnTotal} ], [ 'after  '.txnTotal ]), "\n";
 
-   printf "add_txn %s: %s %s %s%s\n", $dispcat, $postdate, cents_to_dc_pretty($cents), $patched, $descr;
+   printf "add_txn %s: %s %s %s%s\n", $dispcat, $postdate, $cents_to_dc_pretty->($cents), $patched, $descr;
    }
 
-sub patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
-   print "patch_txn_desc $txtype, $from, $to\n";
+sub _patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
+   print "_patch_txn_desc $txtype, $from, $to\n";
    $self->{patchDesc}{$txtype}{$from} = $to;
    $self->{patchDescMiss}{"$txtype,$from"} = 1;
    }
 
-sub set_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = tocents($dcstr);
-   my ($key) = $self->genkey( $aref );
+sub set_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = $tocents->($dcstr);
+   my ($key) = $self->_genkey( $aref );
    print "set_total $key = ", $cents_to_dc->($cents), "\n" ; # if $self->{opts}{v};
    die "multiple definitions of stmtTotal[$key]\n" if exists $self->{stmtTotal}{$key};
    $self->{stmtTotal}{$key} = $cents;
    # print Data::Dumper->Dump([ $self->{stmtTotal} ], [ 'stmtTotal.after' ]), "\n";
    }
-sub add_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = tocents($dcstr);  # some totals summed from multiple sources
-   my ($key) = $self->genkey( $aref );
+sub add_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = $tocents->($dcstr);  # some totals summed from multiple sources
+   my ($key) = $self->_genkey( $aref );
    print "add_total $key = ", $cents_to_dc->($cents), "\n" ; # if $self->{opts}{v};
    $self->{stmtTotal}{$key} += $cents;
    # print Data::Dumper->Dump([ $self->{stmtTotal} ], [ 'stmtTotal.after' ]), "\n";
    }
 
-sub set_stmtCloseDate { my $self = shift; my ($closeDate, $yrMin, $yrMax) = @_;
-   croak "multiple calls to set_stmtId\n" if exists $self->{closeDate};
-   $self->{closeDate} = $closeDate;
-   $self->{yrMin} = $yrMin;
-   $self->{yrMax} = $yrMax;
-   }
 sub set_stmtOpenCloseDates { my $self = shift; # my ($closeDate, $yrMin, $yrMax) = @_;
+   croak "multiple calls to set_stmtOpenCloseDates\n" if exists $self->{closeDate};
    my $yrMin = $1 + 2000;                 print "yrMin $yrMin\n";
    my $yrMax = $4 + 2000 if $1 ne $4;     print "yrMax $yrMax\n" if $yrMax;
    my $closeDate = $4 + 2000 . "-$2-$3";  print "closeDate $closeDate\n";
-   $self->set_stmtCloseDate( $closeDate, $yrMin, $yrMax );
+   $self->{closeDate} = $closeDate;
+   $self->{yrMin} = $yrMin;
+   $self->{yrMax} = $yrMax;
    }
 
 sub parse_new_txn { my $self = shift; my ($retxn,$aref) = @_;
    $self->{yrMin} or die "yrMin not defined prior to txn processing\n";
    if( m"$retxn" ) {
       # print "parse_new_txn $1, $2, $3\n";
-      my ($txpostdt,$txdesc,$txcents) = ($1, $2, tocents($3));
+      my ($txpostdt,$txdesc,$txcents) = ($1, $2, $tocents->($3));
       # print "parse_new_txn $txpostdt, $txdesc, $txcents\n";
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
       $txpostdt = (($self->{yrMax} && $txpostdt =~ m"^01") ? $self->{yrMax} : $self->{yrMin}) . "-$txpostdt";  # prepend year
-      $txdesc =~ s!\s\s+! !g;
+      $txdesc =~ s!\s+! !g;
       $self->add_txn( $aref, $txpostdt, $txcents, $txdesc );
       }
    }
 
 my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called helper method
    my $bdthref = $self->{txnByDate}{$type};
-   my ($srcFnm, $acctId, $closeDt) = ($self->{p2tfnm},$self->{acctId},$self->{closeDate});  # efficiency
+   my ($srcFnm, $acctId, $closeDt) = @$self{ qw( p2tfnm acctId closeDate ) };  # efficiency (hash slice)
    my @rslt;
    for my $dt ( sort keys %$bdthref ) {
       for( my $ix=0 ; $ix < scalar @{$bdthref->{$dt}} ; ++$ix ) {
@@ -211,10 +212,10 @@ sub _rdAddlTxns { my $self = shift; my ($ifnx, $ifx) = @_;
                my ($holder,$dt,$txcents,$desc) = ($1, $2, $3, $4);
                $self->add_txn( ['charge', $holder], $dt, $txcents, $desc, $holder, $src );
                }
-            elsif( m"^(?:desc:\s+)($rdesc)\s*\|\s*($rdesc)" ) {
+            elsif( m"^desc:\s+($rdesc)\s*\|\s*($rdesc)" ) {
                my ($from,$to) = ($1, $2);
                print "patch desc: $from -> $to\n";
-               $self->patch_txn_desc( 'charge', $from, $to );
+               $self->_patch_txn_desc( 'charge', $from, $to );
                }
             else { die "bad format in $addltxnfnm: $_\n"; }
             }
@@ -263,11 +264,11 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
    my %xchkd;
    for my $catkey ( sort keys %{$self->{stmtTotal}} ) {
       $xchkd{$catkey} = 1;
-      $self->cross_chk_totals( $self->{stmtTotal}{$catkey}, $self->{txnTotal}{$catkey} || 0, $catkey );
+      $self->_cross_chk_totals( $self->{stmtTotal}{$catkey}, $self->{txnTotal}{$catkey} || 0, $catkey );
       }
    for my $catkey ( sort keys %{$self->{txnTotal}} ) {
       next if exists $xchkd{$catkey};
-      $self->cross_chk_totals( 0, $self->{txnTotal}{$catkey}, $catkey );
+      $self->_cross_chk_totals( 0, $self->{txnTotal}{$catkey}, $catkey );
       }
 
    if( exists( $self->{patchDescMiss} ) && %{$self->{patchDescMiss}} ) {

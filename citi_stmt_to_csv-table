@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# run on output of `pdftotext -simple Citi_CreditCardStatement.pdf Citi_CreditCardStatement.p2t`
+# run on output of `pdftotext -table Citi_CreditCardStatement.pdf Citi_CreditCardStatement.p2t-table`
 # see %~dp0/CCStmtP2tToCsv.pm for details
 
 use strict;
