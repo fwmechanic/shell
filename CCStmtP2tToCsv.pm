@@ -43,8 +43,14 @@ sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact fl
 sub cents_to_dc_pretty { my ($cents) = @_; sprintf "%5d.%02d", $cents / 100, $cents % 100; }
 my $cents_to_dc = sub  { my ($cents) = @_; sprintf  "%d.%02d", $cents / 100, $cents % 100; };
 
-sub cross_chk_totals { my ($stmtTotal,$accumdTxns,$anno) = @_;
-   $anno = sprintf '%-25s', $anno;
+sub genkey { my $self = shift; my $aref = shift;
+   my $rv = join( '::', @$aref );
+   $self->{maxkeylen} = length($rv) unless exists $self->{maxkeylen} && $self->{maxkeylen} > length($rv);
+   return ($rv, sprintf( '%-*s', $self->{maxkeylen}, $rv ));
+   }
+
+sub cross_chk_totals { my ($self,$stmtTotal,$accumdTxns,$anno) = @_;
+   $anno = sprintf '%-*s', $self->{maxkeylen}, $anno;
    if( $stmtTotal != $accumdTxns ) {
       printf "**************************************************************************************\n";
       printf "cross-check $anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns), cents_to_dc_pretty($stmtTotal - $accumdTxns);
@@ -102,15 +108,22 @@ sub add_txn { my $self = shift; my ($aref,$postdate,$cents,$descr,$ctx,$src) = @
       $patched = '!';
       }
    }
-   my $txcat = join( '::', @$aref );
+   my ($txcat,$dispcat) = $self->genkey( $aref );
    my %txn = ( txcat=>$txcat, date=>$postdate, cents=>$cents, description=>$descr );
    $txn{context} = $ctx if defined $ctx;
    $txn{srcdoc}  = $src if defined $src;
    push @{$self->{txnByDate}{$txcat}{$postdate}}, \%txn;
 
-   $self->_add_total( 'txnTotal', $aref, $cents );
+   # print Data::Dumper->Dump([ $self->{txnTotal$selfKey} ], [ 'before '.txnTotal ]), "\n";
+   for( my $ix = 0; $ix < scalar @$aref; ++$ix ) {
+      my $key = join('::', @$aref[0..$ix]);
+      # print "  $key += $cents", "\n";
+      # print Data::Dumper->Dump([ $self->{txnTotal} ], [qw(hr)]), "\n";
+      $self->{txnTotal}{$key} += $cents;
+      }
+   # print Data::Dumper->Dump([ $self->{txnTotal} ], [ 'after  '.txnTotal ]), "\n";
 
-   printf "add_txn %s: %s %s %s%s\n", $txcat, $postdate, cents_to_dc_pretty($cents), $patched, $descr;
+   printf "add_txn %s: %s %s %s%s\n", $dispcat, $postdate, cents_to_dc_pretty($cents), $patched, $descr;
    }
 
 sub patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
@@ -119,31 +132,18 @@ sub patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
    $self->{patchDescMiss}{"$txtype,$from"} = 1;
    }
 
-sub _add_total { my $self = shift; my ($selfKey,$aref,$cents) = @_;
-   print Data::Dumper->Dump([ $self->{$selfKey} ], [ 'before '.$selfKey ]), "\n";
-   my $hr = $self->{$selfKey};
-   for( my $ix = 0; $ix < scalar @$aref; ++$ix ) {
-      my $key = join('::', @$aref[0..$ix]);
-      print "  $key += $cents", "\n";
-      # print Data::Dumper->Dump([ $hr ], [qw(hr)]), "\n";
-      $hr->{$key} += $cents;
-      }
-   print Data::Dumper->Dump([ $self->{$selfKey} ], [ 'after  '.$selfKey ]), "\n";
-   return join('::', @$aref);
-   }
-
 sub set_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = tocents($dcstr);
-   my $key = join('::', @$aref);
+   my ($key) = $self->genkey( $aref );
    print "set_total $key = ", $cents_to_dc->($cents), "\n" ; # if $self->{opts}{v};
    die "multiple definitions of stmtTotal[$key]\n" if exists $self->{stmtTotal}{$key};
    $self->{stmtTotal}{$key} = $cents;
-   print Data::Dumper->Dump([ $self->{stmtTotal} ], [ 'stmtTotal.after' ]), "\n";
+   # print Data::Dumper->Dump([ $self->{stmtTotal} ], [ 'stmtTotal.after' ]), "\n";
    }
 sub add_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = tocents($dcstr);  # some totals summed from multiple sources
-   my $key = join('::', @$aref);
+   my ($key) = $self->genkey( $aref );
    print "add_total $key = ", $cents_to_dc->($cents), "\n" ; # if $self->{opts}{v};
    $self->{stmtTotal}{$key} += $cents;
-   print Data::Dumper->Dump([ $self->{stmtTotal} ], [ 'stmtTotal.after' ]), "\n";
+   # print Data::Dumper->Dump([ $self->{stmtTotal} ], [ 'stmtTotal.after' ]), "\n";
    }
 
 sub set_stmtCloseDate { my $self = shift; my ($closeDate, $yrMin, $yrMax) = @_;
@@ -162,9 +162,9 @@ sub set_stmtOpenCloseDates { my $self = shift; # my ($closeDate, $yrMin, $yrMax)
 sub parse_new_txn { my $self = shift; my ($retxn,$aref) = @_;
    $self->{yrMin} or die "yrMin not defined prior to txn processing\n";
    if( m"$retxn" ) {
-      print "parse_new_txn $1, $2, $3\n";
+      # print "parse_new_txn $1, $2, $3\n";
       my ($txpostdt,$txdesc,$txcents) = ($1, $2, tocents($3));
-      print "parse_new_txn $txpostdt, $txdesc, $txcents\n";
+      # print "parse_new_txn $txpostdt, $txdesc, $txcents\n";
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
       $txpostdt = (($self->{yrMax} && $txpostdt =~ m"^01") ? $self->{yrMax} : $self->{yrMin}) . "-$txpostdt";  # prepend year
       $txdesc =~ s!\s\s+! !g;
@@ -255,22 +255,19 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
          }
       }
    }
-   for my $type ( sort keys %{$self->{txnByDate}} ) {
-      $self->{txnsByType}{$type} = $_byDateToList->( $self, $type );
-      }
 
    print "\ncross-checking\n\n";
 
-   print Data::Dumper->Dump([$self->{stmtTotal},$self->{txnTotal}], [qw(stmtTotal txnTotal)]);
+   # print Data::Dumper->Dump([$self->{stmtTotal},$self->{txnTotal}], [qw(stmtTotal txnTotal)]), "\n";
 
    my %xchkd;
    for my $catkey ( sort keys %{$self->{stmtTotal}} ) {
       $xchkd{$catkey} = 1;
-      cross_chk_totals( $self->{stmtTotal}{$catkey}, $self->{txnTotal}{$catkey} || 0, $catkey );
+      $self->cross_chk_totals( $self->{stmtTotal}{$catkey}, $self->{txnTotal}{$catkey} || 0, $catkey );
       }
    for my $catkey ( sort keys %{$self->{txnTotal}} ) {
       next if exists $xchkd{$catkey};
-      cross_chk_totals( 0, $self->{txnTotal}{$catkey}, $catkey );
+      $self->cross_chk_totals( 0, $self->{txnTotal}{$catkey}, $catkey );
       }
 
    if( exists( $self->{patchDescMiss} ) && %{$self->{patchDescMiss}} ) {
@@ -280,6 +277,10 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
       }
 
    $self->_section_parsers_report();
+
+   for my $type ( sort keys %{$self->{txnByDate}} ) {
+      $self->{txnsByType}{$type} = $_byDateToList->( $self, $type );
+      }
 
    if( 0 ) {  # various debug variants
       # print Data::Dumper->Dump([$self->{txnByDate}, $self->{txnsByType}], [qw(txnByDate txnsByType)]);
