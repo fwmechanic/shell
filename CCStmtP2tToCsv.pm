@@ -38,7 +38,7 @@ EOT
 
 my $tocents = sub { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
    $dcstr =~ s/[,\$]//g;
-   my ($sign,$dol, $cents) = $dcstr =~ /^([-+]?)(\d*)\.(\d{2})$/;
+   my ($sign,$dol,$cents) = $dcstr =~ /^([-+]?)(\d*)\.(\d{2})$/;
    $cents = ((($dol || 0) * 100) + $cents);
    $cents = 0 - $cents if $sign eq '-';
    return $cents;
@@ -103,30 +103,24 @@ sub _section_parsers_report { my $self = shift;
       }
    }
 sub add_txn { my $self = shift; my ($aref,$postdate,$cents,$descr,$ctx,$src) = @_;
+   my $txtype = $aref->[0];  # semi-hack
    my $patched = ' ';
-   {
-   my $txtype = $aref->[0];  # hack
    if( defined $self->{patchDesc}{$txtype}{$descr} ) {
       delete( $self->{patchDescMiss}{"$txtype,$descr"} );
       $descr = $self->{patchDesc}{$txtype}{$descr};
       $patched = '!';
       }
-   }
    my ($txcat,$dispcat) = $self->_genkey( $aref );
    my %txn = ( txcat=>$txcat, date=>$postdate, cents=>$cents, description=>$descr );
    $txn{context} = $ctx if defined $ctx;
    $txn{srcdoc}  = $src if defined $src;
-   push @{$self->{txnByDate}{$txcat}{$postdate}}, \%txn;
-
+   push @{$self->{txnByDate}{$txtype}{$postdate}}, \%txn;
    # print Data::Dumper->Dump([ $self->{txnTotal$selfKey} ], [ 'before '.txnTotal ]), "\n";
    for( my $ix = 0; $ix < scalar @$aref; ++$ix ) {
-      my $key = join('::', @$aref[0..$ix]);
-      # print "  $key += $cents", "\n";
-      # print Data::Dumper->Dump([ $self->{txnTotal} ], [qw(hr)]), "\n";
+      my $key = join('::', @$aref[0..$ix]);  # print "  $key += $cents", "\n" Data::Dumper->Dump([ $self->{txnTotal} ], [qw(hr)]), "\n";
       $self->{txnTotal}{$key} += $cents;
       }
    # print Data::Dumper->Dump([ $self->{txnTotal} ], [ 'after  '.txnTotal ]), "\n";
-
    printf "add_txn %s: %s %s %s%s\n", $dispcat, $postdate, $cents_to_dc_pretty->($cents), $patched, $descr;
    }
 
@@ -173,19 +167,20 @@ sub parse_new_txn { my $self = shift; my ($retxn,$aref) = @_;
       }
    }
 
-my $_byDateToList = sub { my ($self,$type) = @_;  # private manually called helper method
-   my $bdthref = $self->{txnByDate}{$type};
+my $_byDateToList = sub { my ($self,$txtype) = @_;  # private manually called helper method
+   my $bdthref = $self->{txnByDate}{$txtype};
    my ($srcFnm, $acctId, $closeDt) = @$self{ qw( p2tfnm acctId closeDate ) };  # efficiency (hash slice)
    my @rslt;
    for my $dt ( sort keys %$bdthref ) {
       for( my $ix=0 ; $ix < scalar @{$bdthref->{$dt}} ; ++$ix ) {
-         $bdthref->{$dt}[$ix]{dtsnum}   = $ix;  # modify source!
-         $bdthref->{$dt}[$ix]{dc} = $cents_to_dc->($bdthref->{$dt}[$ix]{cents});
-         $bdthref->{$dt}[$ix]{srcdoc} ||= $srcFnm;  # modify source (denormalize)
-         $bdthref->{$dt}[$ix]{acctId}   = $acctId;  # modify source (denormalize)
-         $bdthref->{$dt}[$ix]{closeDt}  = $closeDt; # modify source (denormalize)
-         $bdthref->{$dt}[$ix]{stmtId}   = $acctId .'+closedt='. $closeDt; # modify source (denormalize)
-         push @rslt, $bdthref->{$dt}[$ix];
+         my $hr = $bdthref->{$dt}[$ix];
+         $hr->{dtsnum}   = $ix;  # modify source!
+         $hr->{dc}       = $cents_to_dc->( $hr->{cents} );
+         $hr->{srcdoc} ||= $srcFnm;  # modify source (denormalize)
+         $hr->{acctId}   = $acctId;  # modify source (denormalize)
+         $hr->{closeDt}  = $closeDt; # modify source (denormalize)
+         $hr->{stmtId}   = $acctId .'+closeDt='. $closeDt; # modify source (denormalize)
+         push @rslt, $hr;
          }
       }
    return \@rslt;
@@ -279,8 +274,8 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
 
    $self->_section_parsers_report();
 
-   for my $type ( sort keys %{$self->{txnByDate}} ) {
-      $self->{txnsByType}{$type} = $_byDateToList->( $self, $type );
+   for my $txtype ( sort keys %{$self->{txnByDate}} ) {  print "$txtype\n";
+      $self->{txnsByType}{$txtype} = $_byDateToList->( $self, $txtype );
       }
 
    if( 0 ) {  # various debug variants
