@@ -262,8 +262,7 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
       $self->_cross_chk_totals( $self->{stmtTotal}{$catkey}, $self->{txnTotal}{$catkey} || 0, $catkey );
       }
    for my $catkey ( sort keys %{$self->{txnTotal}} ) {
-      next if exists $xchkd{$catkey};
-      $self->_cross_chk_totals( 0, $self->{txnTotal}{$catkey}, $catkey );
+      $self->_cross_chk_totals( 0, $self->{txnTotal}{$catkey}, $catkey ) unless exists $xchkd{$catkey};
       }
 
    if( exists( $self->{patchDescMiss} ) && %{$self->{patchDescMiss}} ) {

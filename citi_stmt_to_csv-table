@@ -11,7 +11,6 @@ use lib $FindBin::Bin;
 use CCStmtP2tToCsv;
 
 my $opts = CCStmtP2tToCsv::getopts();
-$opts->{n} = 1; # disable read of addltxns file
 
 my $rdt = '\d{2}/\d{2}';
 my $rdesc = '\w.*\w';
