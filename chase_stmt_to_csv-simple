@@ -17,7 +17,7 @@ my $rdesc = '\w.*\w';
 my $rpmdamtcapt = '\s+([-+]?\$?[\d,]*\.\d{2})\b';
 my $rtxn = qr"\s+($rdt)\s+($rdesc)$rpmdamtcapt";
 my $retxn = "^(?:$rdt)?$rtxn";
-my($plus,$minus) = qw( credit purchase );
+my($plus,$minus) = qw( credit charge );
 
 for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sorted (assumes stmt filenames are validly date-sortable)
    my $lp_ignore = sub {;};
