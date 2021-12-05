@@ -59,10 +59,11 @@ sub _cross_chk_totals { my ($self,$stmtTotal,$accumdTxns,$anno) = @_;
       printf "**************************************************************************************\n";
       printf "cross-check $anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", $cents_to_dc_pretty->($stmtTotal), $cents_to_dc_pretty->($accumdTxns), $cents_to_dc_pretty->($stmtTotal - $accumdTxns);
       printf "**************************************************************************************\n";
-      exit(1);
+      return 1;
       }
    else {
       printf "cross-check $anno: stmtTotal (%s) == accumdTxns (%s) same\n", $cents_to_dc_pretty->($stmtTotal), $cents_to_dc_pretty->($accumdTxns);
+      return 0;
       }
    }
 
@@ -208,9 +209,7 @@ sub _rdAddlTxns { my $self = shift; my ($ifnx, $ifx) = @_;
                $self->add_txn( ['charge', $holder], $dt, $txcents, $desc, $holder, $src );
                }
             elsif( m"^desc:\s+($rdesc)\s*\|\s*($rdesc)" ) {
-               my ($from,$to) = ($1, $2);
-               print "patch desc: $from -> $to\n";
-               $self->_patch_txn_desc( 'charge', $from, $to );
+               $self->_patch_txn_desc( 'charge', $1, $2 );
                }
             else { die "bad format in $addltxnfnm: $_\n"; }
             }
@@ -229,7 +228,6 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
       p2tfnm => $p2tfnm,
       section_parsers => $spref,
       sections_seen => [],
-      txnByCat => {},
       txnTotal => {},
       stmtTotal => {},
       opts => $opts,
@@ -252,18 +250,18 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
       }
    }
 
-   print "\ncross-checking\n\n";
-
    # print Data::Dumper->Dump([$self->{stmtTotal},$self->{txnTotal}], [qw(stmtTotal txnTotal)]), "\n";
 
-   my %xchkd;
+   { my ($failCt,%xchkd) = (0);  print "\ncross-checking\n\n";
    for my $catkey ( sort keys %{$self->{stmtTotal}} ) {
       $xchkd{$catkey} = 1;
-      $self->_cross_chk_totals( $self->{stmtTotal}{$catkey}, $self->{txnTotal}{$catkey} || 0, $catkey );
+      $failCt += $self->_cross_chk_totals( $self->{stmtTotal}{$catkey}, $self->{txnTotal}{$catkey} || 0, $catkey );
       }
    for my $catkey ( sort keys %{$self->{txnTotal}} ) {
-      $self->_cross_chk_totals( 0, $self->{txnTotal}{$catkey}, $catkey ) unless exists $xchkd{$catkey};
+      $failCt += $self->_cross_chk_totals( 0, $self->{txnTotal}{$catkey}, $catkey ) unless exists $xchkd{$catkey};
       }
+   die "$failCt failed cross checks\n" if $failCt > 0;
+   }
 
    if( exists( $self->{patchDescMiss} ) && %{$self->{patchDescMiss}} ) {
       print "desc patches were provided which were not applied:\n";
@@ -283,20 +281,18 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
         print Data::Dumper->Dump([$self->{txnsByType}], [qw(txnsByType)]);
       }
 
-   {
-   my $ofnm = $ifnx . 'DDump';
+   { my $ofnm = $ifnx . 'DDump';
    open my $ofh, '>', $ofnm or croak "abend cannot open $ofnm for writing: $!\n";
    print $ofh Data::Dumper->Dump([$self->{txnsByType}], [qw(txnsByType)]);
    }
    my @csvLines;
-   {
-   my $ofnm = $ifnx . 'csv';
+   { my $ofnm = $ifnx . 'csv';
    open my $ofh, '>', $ofnm or croak "abend cannot open $ofnm for writing: $!\n";
    my @hdr = qw( date dc description stmtId );
-  #print $ofh join( ',', map { '"'.$_.'"' } @hdr ), "\n";
+ # print $ofh join( ',', map { '"'.$_.'"' } @hdr ), "\n";  # CSV file header line (can be omitted)
    for my $txntype ( sort @{$ar_export_txntypes} ) {
-      for ( @{$self->{txnsByType}{$txntype}} ) {
-         my $csvline = join( ',', map { '"'.$_.'"' } @{$_}{@hdr} );
+      for my $txhref ( @{$self->{txnsByType}{$txntype}} ) {
+         my $csvline = join( ',', map { '"'.$_.'"' } @{$txhref}{@hdr} );  # hash slice
          push @csvLines, $csvline;
          print $ofh $csvline, "\n";
          }

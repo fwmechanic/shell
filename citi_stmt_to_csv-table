@@ -17,12 +17,12 @@ my $rdesc = '\w.*\w';
 my $rpmdamtcapt = '\s+([-+]?\$?[\d,]*\.\d{2})\b';
 my $rtxn = qr"\s+($rdt)\s+($rdesc)$rpmdamtcapt";
 my $retxn = "^(?:$rdt)?$rtxn";
-
 my $reStdPurch = 'Standard\s+Purchases';
+my($plus,$minus) = qw( credit charge );
 
 for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sorted (assumes stmt filenames are validly date-sortable)
-   my $lp_GenericCharges = sub { my $self = shift; $self->parse_new_txn( $retxn, ['charge'] ); };
-   my $lp_Payments = sub { my $self = shift; $self->parse_new_txn( $retxn, ['credit'] ); };
+   my $lp_GenericCharges = sub { my $self = shift; $self->parse_new_txn( $retxn, [$minus] ); };
+   my $lp_Payments       = sub { my $self = shift; $self->parse_new_txn( $retxn, [$plus ] ); };
    my ($cardholder);  # multiline parse support
    my $lp_CardholderSummary = sub { my $self = shift;
       if( !defined($cardholder) ) {
@@ -30,16 +30,16 @@ for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sort
          }
       elsif( m"^New\sCharges$rpmdamtcapt" ) {
          $self->rmv_section_hdr( $reStdPurch );  # if cardholders appear in stmt, $reStdPurch => $lp_GenericCharges is replaced by '$cardholder, sub ...'
-         $self->set_total( ['charge',$cardholder], $1 );
+         $self->set_total( [$minus,$cardholder], $1 );
          my $ch_capt = $cardholder;  # freeze this $cardholder value for closure
-         $self->add_section_hdr( $cardholder, sub { my $self = shift; $self->parse_new_txn( $retxn, ['charge', $ch_capt] ); } );
+         $self->add_section_hdr( $cardholder, sub { my $self = shift; $self->parse_new_txn( $retxn, [$minus, $ch_capt] ); } );
          $cardholder = undef;  # we're done with this $cardholder
          }
       };
    my $lp_ignore = sub {;};
    my $AccountSummary = sub { my $self = shift;
-      if(    m"(?:Payments|Credits)$rpmdamtcapt" ) { $self->add_total( ['credit'], $1 ); }
-      elsif( m"Purchases$rpmdamtcapt" )            { $self->set_total( ['charge'], $1 ); }
+      if(    m"(?:Payments|Credits)$rpmdamtcapt" ) { $self->add_total( [$plus ], $1 ); }
+      elsif( m"Purchases$rpmdamtcapt" )            { $self->set_total( [$minus], $1 ); }
       };
    my $lp_BillPeriod = sub { my $self = shift;
       if( m"^\s*Billing\s+Period:\s+\d{2}/\d{2}/(\d{2})\-(\d{2})/(\d{2})/(\d{2})" ) { print "yrMin/yrMax raw $1/$4\n";
@@ -49,13 +49,13 @@ for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sort
          }
       };
    my $init_key = '(start_of_file)';
-   CCStmtP2tToCsv::process_stmt_p2t( shift, {
+   CCStmtP2tToCsv::process_stmt_p2t( $ifnm, {
       $init_key                                 => $lp_BillPeriod,
       'CARDHOLDER\s+SUMMARY'                    => $lp_CardholderSummary,
       'Payments,\s+Credits\s+and\s+Adjustments' => $lp_Payments,
       'Fees\s+Charged'                          => $lp_ignore,
       $reStdPurch                               => $lp_GenericCharges,
-      }, $init_key, [ qw( charge ) ], $opts
+      }, $init_key, [$minus], $opts
       );
    }
 CCStmtP2tToCsv::write_all_csv() if @ARGV > 1;

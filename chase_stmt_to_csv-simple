@@ -17,13 +17,14 @@ my $rdesc = '\w.*\w';
 my $rpmdamtcapt = '\s+([-+]?\$?[\d,]*\.\d{2})\b';
 my $rtxn = qr"\s+($rdt)\s+($rdesc)$rpmdamtcapt";
 my $retxn = "^(?:$rdt)?$rtxn";
+my($plus,$minus) = qw( credit purchase );
 
 for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sorted (assumes stmt filenames are validly date-sortable)
    my $lp_ignore = sub {;};
    my $lp_AcctSummary = sub { my $self = shift;  # print "lp_AcctSummary $_\n";
       s/(\w)`(\w)/$1$2/; # VERY strange translation issue
-      if(    m"^\s*Payment,\s+Credits$rpmdamtcapt" ) { $self->set_total( ['credit'  ], $1 ); }
-      elsif( m"^\s*Purchases$rpmdamtcapt"          ) { $self->set_total( ['purchase'], $1 ); }
+      if(    m"^\s*Payment,\s+Credits$rpmdamtcapt" ) { $self->set_total( [$plus ], $1 ); }
+      elsif( m"^\s*Purchases$rpmdamtcapt"          ) { $self->set_total( [$minus], $1 ); }
     # elsif( m"^\s*Account Number:\s+\d{4} \d{4} \d{4} (\d{4})\b" ) {  print "acctnum $1\n"; my $acctnum = $1; } # now obtained from ./AccountId.pl, but may be cross-checked in the future...
       elsif( m"^\s*Opening/Closing Date\s+\d{2}/\d{2}/(\d{2})\s+\-\s+(\d{2})/(\d{2})/(\d{2})" ) { print "yrMin/yrMax raw $1/$4\n";
          $self->set_stmtOpenCloseDates();
@@ -34,15 +35,15 @@ for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sort
       {
       $init_key                          => $lp_ignore,
       'ACCOUNT\s+SUMMARY'                => $lp_AcctSummary,
-      'PAYMENTS\s+AND\s+OTHER\s+CREDITS' => sub { my $self = shift; $self->parse_new_txn( $retxn, ['credit'  ] ); },
-      'PURCHASE'                         => sub { my $self = shift; $self->parse_new_txn( $retxn, ['purchase'] ); },
+      'PAYMENTS\s+AND\s+OTHER\s+CREDITS' => sub { my $self = shift; $self->parse_new_txn( $retxn, [$plus ] ); },
+      'PURCHASE'                         => sub { my $self = shift; $self->parse_new_txn( $retxn, [$minus] ); },
       'PURCHASES\s+AND\s+REDEMPTIONS'    => $lp_ignore,
       'INTEREST\s+CHARGES'               => $lp_ignore,
       'CASH\s+ADVANCES'                  => $lp_ignore,
       'BALANCE\s+TRANSFERS'              => $lp_ignore,
       'FEES\s+CHARGED'                   => $lp_ignore,
       'RETURNS\s+AND\s+OTHER\s+CREDITS'  => $lp_ignore,
-      }, $init_key, [ qw( purchase ) ], $opts
+      }, $init_key, [$minus], $opts
       );
    }
 CCStmtP2tToCsv::write_all_csv() if @ARGV > 1;
