@@ -50,12 +50,12 @@ for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sort
       };
    my $init_key = '(start_of_file)';
    CCStmtP2tToCsv::process_stmt_p2t( $ifnm, {
-      $init_key                                 => $lp_BillPeriod,
-      'CARDHOLDER\s+SUMMARY'                    => $lp_CardholderSummary,
-      'Payments,\s+Credits\s+and\s+Adjustments' => $lp_Payments,
-      'Fees\s+Charged'                          => $lp_ignore,
-      $reStdPurch                               => $lp_GenericCharges,
-      }, $init_key, [$minus], $opts
+         $init_key                           => $lp_BillPeriod,
+         'CARDHOLDER SUMMARY'                => $lp_CardholderSummary,
+         'Payments, Credits and Adjustments' => $lp_Payments,
+         'Fees Charged'                      => $lp_ignore,
+         $reStdPurch                         => $lp_GenericCharges,
+         }, $init_key, [$minus], $opts
       );
    }
 CCStmtP2tToCsv::write_all_csv() if @ARGV > 1;

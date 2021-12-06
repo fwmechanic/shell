@@ -31,19 +31,18 @@ for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sort
          }
       };
    my $init_key = '(start_of_file)';
-   CCStmtP2tToCsv::process_stmt_p2t( $ifnm,
-      {
-      $init_key                          => $lp_ignore,
-      'ACCOUNT\s+SUMMARY'                => $lp_AcctSummary,
-      'PAYMENTS\s+AND\s+OTHER\s+CREDITS' => sub { my $self = shift; $self->parse_new_txn( $retxn, [$plus ] ); },
-      'PURCHASE'                         => sub { my $self = shift; $self->parse_new_txn( $retxn, [$minus] ); },
-      'PURCHASES\s+AND\s+REDEMPTIONS'    => $lp_ignore,
-      'INTEREST\s+CHARGES'               => $lp_ignore,
-      'CASH\s+ADVANCES'                  => $lp_ignore,
-      'BALANCE\s+TRANSFERS'              => $lp_ignore,
-      'FEES\s+CHARGED'                   => $lp_ignore,
-      'RETURNS\s+AND\s+OTHER\s+CREDITS'  => $lp_ignore,
-      }, $init_key, [$minus], $opts
+   CCStmtP2tToCsv::process_stmt_p2t( $ifnm, {
+         $init_key                    => $lp_ignore,
+         'ACCOUNT SUMMARY'            => $lp_AcctSummary,
+         'PAYMENTS AND OTHER CREDITS' => sub { my $self = shift; $self->parse_new_txn( $retxn, [$plus ] ); },
+         'PURCHASE'                   => sub { my $self = shift; $self->parse_new_txn( $retxn, [$minus] ); },
+         'PURCHASES AND REDEMPTIONS'  => $lp_ignore,
+         'INTEREST CHARGES'           => $lp_ignore,
+         'CASH ADVANCES'              => $lp_ignore,
+         'BALANCE TRANSFERS'          => $lp_ignore,
+         'FEES CHARGED'               => $lp_ignore,
+         'RETURNS AND OTHER CREDITS'  => $lp_ignore,
+         }, $init_key, [$minus], $opts
       );
    }
 CCStmtP2tToCsv::write_all_csv() if @ARGV > 1;

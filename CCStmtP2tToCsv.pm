@@ -83,6 +83,16 @@ sub _found_section_hdr { my $self = shift; my ($lphdr) = @_;
    push @{$self->{sections_seen}}, $lpnorm;
    return $lpsub;
    }
+my $_norm_hr_keys = sub { my ($hr) = @_;
+   my %tochg;
+   for my $ok ( keys %$hr ) {
+      my $nk = $ok =~ s!\s+!\\s+!gr;
+      $tochg{$ok} = $nk unless $ok eq $nk;
+      }
+   for my $ok ( keys %tochg ) {
+      $hr->{$tochg{$ok}} = delete $hr->{$ok};
+      }
+   };
 sub add_section_hdr { my $self = shift; my ($hdr,$coderef) = @_;
    print "add_section_hdr $hdr\n" ; # if $self->{opts}{v};
    $hdr =~ s!\s+!\\s+!g;
@@ -224,6 +234,7 @@ sub process_stmt_p2t { my($p2tfnm,$spref,$init_sp_key,$ar_export_txntypes,$opts)
    # my($ifnmname, $ifnmdirs, $ifnmsuffix) = fileparse($ifnm);
    # print "$ifnm, $ifnmname, $ifnmdirs, $ifnmsuffix\n";
    my ($ifnx,$ifx) = $p2tfnm =~ m"(.+\.)([^\.]+)$";
+   $_norm_hr_keys->( $spref );
    my $self = {
       p2tfnm => $p2tfnm,
       section_parsers => $spref,
