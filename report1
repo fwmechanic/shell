@@ -9,6 +9,11 @@ use File::Find;
 use Time::Piece;
 use Time::Seconds;
 
+use FindBin;
+use lib $FindBin::Bin;
+use CCStmtP2tToCsv;  # utility fxns & constants
+my $rpmdamtcapt = CCStmtP2tToCsv::rpmdamtcapt();
+
 # usage: report1 $(find . -mindepth 2 -maxdepth 2 -type f -iname '#MONTHLY*.txt')
 
 our ($opt_v,$opt_m);
@@ -30,14 +35,15 @@ my $allcents = 0;
 for my $fnm ( @ARGV ) {  # print "$fnm\n";
    my ($billnm) = fileparse($fnm);
    my ($sumcents, $hits) = (0,0);
-   my $addmonpymt = sub { my ($yr, $mon, $dol, $cents) = @_;
+   my $addmonpymt = sub { my ($yr, $mon, $dc) = @_;
       my $ym = ym_to_st( $yr, $mon );
       if(   ($ym ge $minym)
          && ($ym le $maxym)
         ) {  #
-           printf "   %-10s += %s %5i.%02i\n", $billnm, $ym, $dol, $cents if $opt_v;
-         # print "$billnm: $yr.$mon : $dol.$cents\n";
-         $sumcents += (($dol * 100) + $cents);
+         my $cents = CCStmtP2tToCsv::tocents($dc);
+           printf "   %-10s += %s %s\n", $billnm, $ym, CCStmtP2tToCsv::cents_to_dc_pretty($cents) if $opt_v;
+         # print "$billnm: $yr.$mon : $dc\n";
+         $sumcents += $cents;
          ++$hits;
          }
       };
@@ -49,18 +55,18 @@ for my $fnm ( @ARGV ) {  # print "$fnm\n";
          $billnm = $1;
          next;
          }
-      if( my ($ymin,$mmin,$ymax,$mmax,$dol,$cents) = m!^\s*fixed\-monthly\s+(\d{4})[._]?(\d{2})\-(\d{4})[._]?(\d{2})\s+(\d+)\.(\d{2})(?:\s|$)! ) {  # print "FM $dol,$cents  over $opt_m months\n";
+      if( my ($ymin,$mmin,$ymax,$mmax,$dc) = m!^\s*fixed\-monthly\s+(\d{4})[._]?(\d{2})\-(\d{4})[._]?(\d{2})$rpmdamtcapt! ) {  # print "FM $dc  over $opt_m months\n";
          for( my $yr=$ymin; $yr<=$ymax; ++$yr ) {
             my ($mon,$monmax) = ($yr eq $ymin ? $mmin : "01", $yr eq $ymax ? $mmax : "12" );
             for( ; $mon<=$monmax; ++$mon ) {
-               $addmonpymt->( $yr, $mon, $dol, $cents );
+               $addmonpymt->( $yr, $mon, $dc );
                }
             }
          next;
          }
       # print "$_\n";
-      if( my ($yr,$mon,$dol,$cents) = m!^\s*\%\~dp0/(\d{4})[._]?(\d{2})[._]?\d{2}\S+\s+.*?(\d+)\.(\d{2})(?:\s|$)! ) {
-         $addmonpymt->( $yr, $mon, $dol, $cents );
+      if( my ($yr,$mon,$dc) = m!^\s*\%\~dp0/(\d{4})[._]?(\d{2})[._]?\d{2}\S*$rpmdamtcapt! ) {
+         $addmonpymt->( $yr, $mon, $dc );
          next;
          }
       }

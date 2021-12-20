@@ -36,7 +36,9 @@ EOT
    return \%opts;
    }
 
-my $tocents = sub { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
+sub rpmdamtcapt { '\s+([-+]?\$?[\d,]*\.\d{2})\b'; }
+
+sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
    $dcstr =~ s/[,\$]//g;
    my ($sign,$dol,$cents) = $dcstr =~ /^([-+]?)(\d*)\.(\d{2})$/;
    $cents = ((($dol || 0) * 100) + $cents);
@@ -44,8 +46,8 @@ my $tocents = sub { my ($dcstr) = @_;  # convert currency to cents to avoid inex
    return $cents;
    };
 
-my $cents_to_dc_pretty = sub { my ($cents) = @_; sprintf "%5d.%02d", $cents / 100, $cents % 100; };
-my $cents_to_dc        = sub { my ($cents) = @_; sprintf  "%d.%02d", $cents / 100, $cents % 100; };
+sub cents_to_dc_pretty { my ($cents) = @_; sprintf "%5d.%02d", $cents / 100, $cents % 100; }
+sub cents_to_dc        { my ($cents) = @_; sprintf  "%d.%02d", $cents / 100, $cents % 100; }
 
 sub _genkey { my $self = shift; my $aref = shift;
    my $rv = join( '::', @$aref );
@@ -57,12 +59,12 @@ sub _cross_chk_totals { my ($self,$stmtTotal,$accumdTxns,$anno) = @_;
    $anno = sprintf '%-*s', $self->{maxkeylen}, $anno;
    if( $stmtTotal != $accumdTxns ) {
       printf "**************************************************************************************\n";
-      printf "cross-check $anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", $cents_to_dc_pretty->($stmtTotal), $cents_to_dc_pretty->($accumdTxns), $cents_to_dc_pretty->($stmtTotal - $accumdTxns);
+      printf "cross-check $anno: stmtTotal (%s) != accumdTxns (%s) DIFFER by %s !!!\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns), cents_to_dc_pretty($stmtTotal - $accumdTxns);
       printf "**************************************************************************************\n";
       return 1;
       }
    else {
-      printf "cross-check $anno: stmtTotal (%s) == accumdTxns (%s) same\n", $cents_to_dc_pretty->($stmtTotal), $cents_to_dc_pretty->($accumdTxns);
+      printf "cross-check $anno: stmtTotal (%s) == accumdTxns (%s) same\n", cents_to_dc_pretty($stmtTotal), cents_to_dc_pretty($accumdTxns);
       return 0;
       }
    }
@@ -132,7 +134,7 @@ sub add_txn { my $self = shift; my ($aref,$postdate,$cents,$descr,$ctx,$src) = @
       $self->{txnTotal}{$key} += $cents;
       }
    # print Data::Dumper->Dump([ $self->{txnTotal} ], [ 'after  '.txnTotal ]), "\n";
-   printf "add_txn %s: %s %s %s%s\n", $dispcat, $postdate, $cents_to_dc_pretty->($cents), $patched, $descr;
+   printf "add_txn %s: %s %s %s%s\n", $dispcat, $postdate, cents_to_dc_pretty($cents), $patched, $descr;
    }
 
 sub _patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
@@ -141,16 +143,16 @@ sub _patch_txn_desc { my $self = shift; my($txtype, $from, $to) = @_;
    $self->{patchDescMiss}{"$txtype,$from"} = 1;
    }
 
-sub set_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = $tocents->($dcstr);
+sub set_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = tocents($dcstr);
    my ($key) = $self->_genkey( $aref );
-   print "set_total $key = ", $cents_to_dc->($cents), "\n" ; # if $self->{opts}{v};
+   print "set_total $key = ", cents_to_dc($cents), "\n" ; # if $self->{opts}{v};
    die "multiple definitions of stmtTotal[$key]\n" if exists $self->{stmtTotal}{$key};
    $self->{stmtTotal}{$key} = $cents;
    # print Data::Dumper->Dump([ $self->{stmtTotal} ], [ 'stmtTotal.after' ]), "\n";
    }
-sub add_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = $tocents->($dcstr);  # some totals summed from multiple sources
+sub add_total { my $self = shift; my ($aref,$dcstr) = @_; my $cents = tocents($dcstr);  # some totals summed from multiple sources
    my ($key) = $self->_genkey( $aref );
-   print "add_total $key = ", $cents_to_dc->($cents), "\n" ; # if $self->{opts}{v};
+   print "add_total $key = ", cents_to_dc($cents), "\n" ; # if $self->{opts}{v};
    $self->{stmtTotal}{$key} += $cents;
    # print Data::Dumper->Dump([ $self->{stmtTotal} ], [ 'stmtTotal.after' ]), "\n";
    }
@@ -169,7 +171,7 @@ sub parse_new_txn { my $self = shift; my ($retxn,$aref) = @_;
    $self->{yrMin} or die "yrMin not defined prior to txn processing\n";
    if( m"$retxn" ) {
       # print "parse_new_txn $1, $2, $3\n";
-      my ($txpostdt,$txdesc,$txcents) = ($1, $2, $tocents->($3));
+      my ($txpostdt,$txdesc,$txcents) = ($1, $2, tocents($3));
       # print "parse_new_txn $txpostdt, $txdesc, $txcents\n";
       $txpostdt =~ s!/!-!g;  # ISO8660 sep
       $txpostdt = (($self->{yrMax} && $txpostdt =~ m"^01") ? $self->{yrMax} : $self->{yrMin}) . "-$txpostdt";  # prepend year
@@ -186,7 +188,7 @@ my $_byDateToList = sub { my ($self,$txtype) = @_;  # private manually called he
       for( my $ix=0 ; $ix < scalar @{$bdthref->{$dt}} ; ++$ix ) {
          my $hr = $bdthref->{$dt}[$ix];
          $hr->{dtsnum}   = $ix;  # modify source!
-         $hr->{dc}       = $cents_to_dc->( $hr->{cents} );
+         $hr->{dc}       = cents_to_dc( $hr->{cents} );
          $hr->{srcdoc} ||= $srcFnm;  # modify source (denormalize)
          $hr->{acctId}   = $acctId;  # modify source (denormalize)
          $hr->{closeDt}  = $closeDt; # modify source (denormalize)
