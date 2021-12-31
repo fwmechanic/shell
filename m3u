@@ -59,8 +59,8 @@ my %eachdir;
 sub eachFile { # even if this appears nasty, GLOB is NOT a better alternative!
    my $thisDir = $File::Find::dir;
    ++$eachdir{$thisDir}; # we will generate a m3u file in eachdir PROVIDED it or any of its child dirs contain @playablefiles
-   my $file = $File::Find::name;
-   if( m!\.(?:mp[34g]|m4[ab]|wmv|flac|f[l4]v)$!i ) { # print "F1=$file\n";
+   my $file = $File::Find::name;                       print "F1=$file\n";
+   if( m!\.(?:mp[34g]|m4[ab]|wmv|flac|f[l4]v)$!i ) {
       my $nmsq = $_ =~ s!\s*\-\s*!-!gr;              # print "F1nmsq=$nmsq\n";
       if( my ($tnum,$tnam) = $nmsq =~ m!(^(?:\d+\.)?\d+)[-\s\.]+([^-\.\s].*)$! ) {
          my $newfnm = "$tnum-$tnam";
@@ -82,6 +82,7 @@ for my $arg ( @args ) {
    if(    -f $arg )  { push( @playablefiles, $arg ); }
    elsif( -d $arg )  { # print "a=$arg\n";
                        find( \&eachFile, $arg );
+                       print "scan done\n";
                      }
    else              { push( @playablefiles, glob( $arg ) ); }
    }
