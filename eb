@@ -3,6 +3,8 @@
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" )
 
+command -v 7z >/dev/null || die "7z not in PATH"
+
 optq=0
 
 mkdir_or_die() {  # if already exists, do nothing (existing contents not disturbed)
