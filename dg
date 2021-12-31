@@ -39,7 +39,6 @@ if( scalar @ARGV == 1 && $opt_d ) {
 # stolen from my https://github.com/fwmechanic/file-collection-searcher/blob/master/search-files
 sub gen_re_match_all_anyorder {
    my ($bound_re_before,$bound_re_after) = ( '(?:^|[\W_])', '(?:$|[\W_])' ); # can't use \b because $qm may not consist of word chars only
-   my $bound_re = '(?:\b|[_])';
    my @reraw;
    for (@_) {  # construct regex matching lines containing, in any order, ALL of @_
       my $qm = quotemeta( $_ );            #  match fragment
