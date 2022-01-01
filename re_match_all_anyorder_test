@@ -1,0 +1,67 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+sub gen_re_match_all_anyorder {
+   # https://www.perlmonks.org/?node_id=308753 (thread: https://www.perlmonks.org/?node_id=308744)
+   # to make a specialized version of \b that views "-" and "/" as "word characters" (sort of), you might use something like this:
+   # my $w = '\w/-';
+   my $w = shift or die "gen_re_match_all_anyorder: no args?";
+   my $b = "(?:(*negative_lookbehind:[$w])(*positive_lookahead:[$w])|(*positive_lookbehind:[$w])(*negative_lookahead:[$w]))";
+   # my @words = ($rec =~ /${b}[$w]+${b}/g);
+   my @assertions;
+   for my $rawterm (@_) {  # construct regex matching lines containing, in any order, ALL of @_
+      my $term = quotemeta( $rawterm );  #  match term
+      $term = "$b$term$b" if ($term =~ m=[A-Z]=) && ($term !~ m=[a-z]=); # all term alphas are caps (i.e. at least one uppercase-alpha and no lowercase-alphas)?: match word as defined by $b + $w
+      push @assertions, "(*positive_lookahead:.*$term)"; # https://stackoverflow.com/a/4389683 https://stackoverflow.com/questions/4389644/regex-to-match-string-containing-two-names-in-any-order
+      }
+   my $rv = '^(?i)' . join('',@assertions) . '.*$'; # print "\npat=$rv\n";
+   return qr($rv);
+   }
+
+my $re = gen_re_match_all_anyorder( '\w_', 'ham', 'T_X' );
+
+my @text = split "\n", <<END;
+ham y t_x
+ ham y t_x
+ y t_x ham
+ t_x y ham
+t_x y ham
+joe ham y t_x
+joe ham y t_x joe
+ham at_x
+
+hamy y t_x
+ hamy y t_x
+ y t_x hamy
+ t_x y hamy
+t_x y hamy
+joe hamy y t_x
+joe hamy y t_x joe
+hamy at_x
+
+hamy  _t_x
+ hamy  _t_x
+ _t_x hamy
+ t_x_ hamy
+_t_x hamy
+joe hamy _t_x
+joe hamy t_x_ joe
+hamy at_x
+
+y t_x hamy
+
+at_x ham
+END
+
+for( @text ) {
+   next if /^\s*$/;
+   my $shouldMatch = m"\by\b" ? 1 : 0;
+   my $doesMatch   = m"$re"   ? 1 : 0;
+   if( $shouldMatch != $doesMatch ) {
+      die "should have matched: $_" if $shouldMatch;
+      die "shouldn't have matched: $_" if !$shouldMatch;
+      die "internal error";
+      }
+   }
