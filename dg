@@ -37,16 +37,54 @@ if( scalar @ARGV == 1 && $opt_d ) {
    }
 
 # stolen from my https://github.com/fwmechanic/file-collection-searcher/blob/master/search-files
+
 sub gen_re_match_all_anyorder {
-   my ($bound_re_before,$bound_re_after) = ( '(?:^|[\W_])', '(?:$|[\W_])' ); # can't use \b because $qm may not consist of word chars only
-   my @reraw;
-   for (@_) {  # construct regex matching lines containing, in any order, ALL of @_
-      my $qm = quotemeta( $_ );            #  match fragment
-      $qm = "$bound_re_before$qm$bound_re_after" if ($qm =~ m=[A-Z]=) && ! ($qm =~ m=[a-z]=); # all caps? match word
-      push @reraw, "(?=.*$qm)"; # https://stackoverflow.com/questions/4389644/regex-to-match-string-containing-two-names-in-any-order
+   # https://www.perlmonks.org/?node_id=308753 (thread: https://www.perlmonks.org/?node_id=308744)
+   # to make a specialized version of \b that views "-" and "/" as "word characters" (sort of), you might use something like this:
+   # my $w = '\w/-';
+   my $w = shift or die "gen_re_match_all_anyorder: no args?";
+   my $b = "(?:(*negative_lookbehind:[$w])(*positive_lookahead:[$w])|(*positive_lookbehind:[$w])(*negative_lookahead:[$w]))";
+   # my @words = ($rec =~ /${b}[$w]+${b}/g);
+
+   # The following implements a brute-force solution to the performance problem
+   # caused by use of \b (or $b, the specialized version of \b) to implement
+   # whole-word search terms:
+   #
+   # The returned search regex consists of a sequence of look-ahead-assertions
+   # (LAA), each matching one user search term.  Previously, a word search term
+   # would be wrapped in \b's before being inserted in the (one and only) LAA
+   # sequence in input (i.e. user-provided) order, however the presence of \b
+   # (caused by the presence of ANY word search term) caused a huge (100% == 2x)
+   # performance hit.
+   #
+   # This is resolved by adding _TWO_ LAA's into the returned LAA sequence for
+   # each input word search term:
+   # 1. a non-word-search (string) LAA is added to @strs for every search term.
+   # 2. a word-search (\b) LAA is added to @words for every word search term.
+   #
+   # The returned sequence of LAA's is the concatenation of @strs followed by
+   # @words.  Thus all candidate strings must FIRST pass all @strs LAA's; these
+   # are very fast checks.  Only those few candidate strings passing all @strs
+   # LAA's undergo checking against the (SLOW) @words LAA's.  Assuming only a low
+   # percentage of candidate strings pass all @strs LAA's, the performance impact
+   # of the trailing (SLOW) @words LAA's is reduced to almost nothing (and
+   # testing shows this to be true).
+   #
+   # Given that our search is optimized by failing each candidate string as
+   # quickly as possible, a further optimization is to sort @strs LAA's by
+   # descending length: this causes the longest strings among the input search
+   # terms to be searched for first.  The naive idea being that longer strings
+   # are less likey to be found than short strings.
+   #
+   my (@strs,@words);
+   for my $rawterm (@_) {  # construct regex matching lines containing, in any order, ALL of @_
+      my $term = quotemeta( $rawterm );  #  match term
+      push @strs,  "(*positive_lookahead:.*$term)"; # https://stackoverflow.com/a/4389683 https://stackoverflow.com/questions/4389644/regex-to-match-string-containing-two-names-in-any-order
+      push @words, "(*positive_lookahead:.*$b$term$b)" if ($term =~ m=[A-Z]=) && ($term !~ m=[a-z]=); # all term alphas are caps (i.e. at least one uppercase-alpha and no lowercase-alphas)?: match word as defined by $b + $w
       }
-   my $rv = '^(?i)' . join('',@reraw) . '.*$'; # print "\npat=$rv\n";
-   return $rv;
+   @strs = sort { length $b <=> length $a } @strs;  # try to find longest strings first
+   my $rv = '^(?i)' . join('', @strs) . join('', @words) . '.*$'; # print "\npat=$rv\n";
+   return qr($rv);
    }
 
 sub all_files {
@@ -66,7 +104,7 @@ if( $opt_a ) {     @files = all_files();  }
 elsif( $opt_f ) {  @files = ( "$kdb_dnm/$opt_f" ); }
 else {             @files = ( "$kdb_dnm/daily_notes.kdb" ); }
 
-my $rex = gen_re_match_all_anyorder( @ARGV );
+my $rex = gen_re_match_all_anyorder( '\w_', @ARGV );
 
 my $dtag = ''; # current diary-entry's date-tag (aka timestamp)
 my @dtxt;      # current diary-entry's text (lines)
