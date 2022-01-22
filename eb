@@ -2,8 +2,9 @@
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
 
-command -v 7z >/dev/null || die "7z not in PATH"
+dieifnotinpath 7z
 
 optq=0
 

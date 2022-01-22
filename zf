@@ -2,6 +2,9 @@
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+
+dieifnotinpath 7z
 
 mkdir_or_die() {  # if already exists, do nothing (existing contents not disturbed)
    [[ -d "$1" ]] || mkdir "$1" || die "could not mkdir $1"
