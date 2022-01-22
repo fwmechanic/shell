@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+
+sualt_gcc() (
+  maj="-$1" ; shift || die "sualt_gcc missing arg 1 (GCC major version number)"
+  pri="$1"  ; shift || die "sualt_gcc missing arg 2 (priority of GCC major version)"
+  mac() { echo "/usr/bin/$1 $1 /usr/bin/$1$maj" ; } # factor-out common phrasing in update-alternatives optargs
+  # based on https://stackoverflow.com/a/67453352
+  # shellcheck disable=SC2046  we want word splitting of output of mac
+  see sudo update-alternatives \
+     --install $(mac gcc       ) "$pri" \
+       --slave $(mac g++       ) \
+       --slave $(mac gcov      ) \
+       --slave $(mac gcc-ar    ) \
+       --slave $(mac gcc-ranlib)
+  # above SO link showed use of '--slave $(mac cpp)' in above cmdline, but as of 20220122 (w/ubu 20.04) this generates an error
+  # https://stackoverflow.com/a/70653945 says to "install" it separately, easily done given our factoring
+  see sudo update-alternatives \
+     --install $(mac cpp       ) "$pri"
+  )
+
+set -e
+sualt_gcc  9  90
+sualt_gcc 11 110
+gcc --version;g++ --version;gcc-ar --version;gcc-ranlib --version;gcov --version;cpp --version;
