@@ -31,7 +31,7 @@ my $maxym = ym_to_st( $tmax->year, $tmax->mon );
 print "Report Interval [$minym..$maxym] ($opt_m months)\n";
 
 my $allcents = 0;
-
+my %byAmount;
 for my $fnm ( @ARGV ) {  # print "$fnm\n";
    my ($billnm) = fileparse($fnm);
    my ($sumcents, $hits) = (0,0);
@@ -71,8 +71,19 @@ for my $fnm ( @ARGV ) {  # print "$fnm\n";
          }
       }
    my $moncents = $sumcents / $opt_m;
-   printf( "%2d %-21s %5d.%02d / %d = %5d.%02d\n", $hits, $billnm, $sumcents / 100, $sumcents % 100, $opt_m, $moncents / 100, $moncents % 100 );
+   my $rec = sprintf( "%2d %-21s %5d.%02d / %d = %5d.%02d", $hits, $billnm, $sumcents / 100, $sumcents % 100, $opt_m, $moncents / 100, $moncents % 100 );
+   push @{$byAmount{$sumcents}}, $rec;
+   # printf "sc=%9d\n", $sumcents;
+
    $allcents += $sumcents;
+   }
+
+for my $sumcents (reverse sort { $a <=> $b } keys %byAmount) {
+   for my $rec (sort @{$byAmount{$sumcents}} ) {
+      my $pct = ($sumcents * 1000) / $allcents;
+      my $pd = sprintf( "%3d.%01d%%", $pct / 10, $pct % 10 );
+      print $rec, $pd, "\n";
+      }
    }
 
 my $moncents = $allcents / $opt_m;
