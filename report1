@@ -78,7 +78,7 @@ for my $fnm ( @ARGV ) {  # print "$fnm\n";
    $allcents += $sumcents;
    }
 
-for my $sumcents (reverse sort { $a <=> $b } keys %byAmount) {
+for my $sumcents (sort { $b <=> $a } keys %byAmount) {
    for my $rec (sort @{$byAmount{$sumcents}} ) {
       my $pct = ($sumcents * 1000) / $allcents;
       my $pd = sprintf( "%3d.%01d%%", $pct / 10, $pct % 10 );
