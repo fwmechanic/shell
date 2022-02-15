@@ -29,7 +29,7 @@ do1file() (
    sansext="${sanspath%.*}"    ; echo "sansext=$sansext'"
 
    case "$ext" in
-      mp3|m4a|m4b)
+      mp3|mp4|m4a|m4b)
          see mkdir "$sansext" &&
          mv "$sanspath" "$sansext/" &&
          z1d "$sansext/" &&
