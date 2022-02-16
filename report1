@@ -1,9 +1,11 @@
 #!/usr/bin/perl -w
 
+# usage: report1 $(find . -mindepth 2 -maxdepth 2 -type f -iname '#MONTHLY*.txt')
+
 use strict;
 use warnings;
 use English;
-use Getopt::Std;
+use Getopt::Std;  $Getopt::Std::STANDARD_HELP_VERSION = 1;
 use File::Basename;
 use File::Find;
 use Time::Piece;
@@ -13,24 +15,27 @@ use FindBin;
 use lib $FindBin::Bin;
 use CCStmtP2tToCsv;  # utility fxns & constants
 my $rpmdamtcapt = CCStmtP2tToCsv::rpmdamtcapt();
-
-# usage: report1 $(find . -mindepth 2 -maxdepth 2 -type f -iname '#MONTHLY*.txt')
+my $c2dcp = \&CCStmtP2tToCsv::cents_to_dc_pretty;  # brevity
 
 our ($opt_v,$opt_m);
-getopts( "m:v" );
-$opt_m //= 6; # last N full months (i.e. not including current month)
+getopts( "m:v" ) or die;
 
+$opt_m //= 12; # last N full months (i.e. not including current month which is assumed to be incomplete)
 my $tmax = localtime;
    $tmax = $tmax - (      1    * ONE_MONTH);  # https://stackoverflow.com/a/17601119
 my $tmin = $tmax - (($opt_m-1) * ONE_MONTH);  # https://stackoverflow.com/a/17601119
 
-sub ym_to_st { sprintf "%04d/%02d", $_[0], $_[1]; }
+sub ym_to_st { sprintf "%04d.%02d", $_[0], $_[1]; }
 my $minym = ym_to_st( $tmin->year, $tmin->mon );
 my $maxym = ym_to_st( $tmax->year, $tmax->mon );
 
-print "Report Interval [$minym..$maxym] ($opt_m months)\n";
+sub kpct2st { my ($pct) = @_; sprintf( "%3d.%01d%%", $pct / 10, $pct % 10 ); }
+
+print "$opt_m month report interval: [$minym..$maxym]\n";
 
 my $allcents = 0;
+my $r1total = "   TOTAL";  # 3 leading spaces track "%2d " in $r1 sprintf
+my $maxLen1 = length $r1total;
 my %byAmount;
 for my $fnm ( @ARGV ) {  # print "$fnm\n";
    my ($billnm) = fileparse($fnm);
@@ -41,7 +46,7 @@ for my $fnm ( @ARGV ) {  # print "$fnm\n";
          && ($ym le $maxym)
         ) {  #
          my $cents = CCStmtP2tToCsv::tocents($dc);
-           printf "   %-10s += %s %s\n", $billnm, $ym, CCStmtP2tToCsv::cents_to_dc_pretty($cents) if $opt_v;
+           printf "   %-10s += %s %s\n", $billnm, $ym, $c2dcp->($cents) if $opt_v;
          # print "$billnm: $yr.$mon : $dc\n";
          $sumcents += $cents;
          ++$hits;
@@ -71,20 +76,22 @@ for my $fnm ( @ARGV ) {  # print "$fnm\n";
          }
       }
    my $moncents = $sumcents / $opt_m;
-   my $rec = sprintf( "%2d %-21s %5d.%02d / %d = %5d.%02d", $hits, $billnm, $sumcents / 100, $sumcents % 100, $opt_m, $moncents / 100, $moncents % 100 );
-   push @{$byAmount{$sumcents}}, $rec;
+   my $r1 = sprintf( "%2d %s", $hits, $billnm );  $maxLen1 = length $r1 if $maxLen1 < length $r1;
+   my $r2 = sprintf( "%s / %d = %s", $c2dcp->( $sumcents ), $opt_m, $c2dcp->($moncents) );
+   push @{$byAmount{$sumcents}}, [ $r1, $r2 ];
    # printf "sc=%9d\n", $sumcents;
-
    $allcents += $sumcents;
    }
 
+my $allkpcts = 0;
 for my $sumcents (sort { $b <=> $a } keys %byAmount) {
-   for my $rec (sort @{$byAmount{$sumcents}} ) {
-      my $pct = ($sumcents * 1000) / $allcents;
-      my $pd = sprintf( "%3d.%01d%%", $pct / 10, $pct % 10 );
-      print $rec, $pd, "\n";
+   my $kpct = ($sumcents * 1000) / $allcents;  # NB: "kilopercent"
+   my $pd = kpct2st( $kpct );
+   $allkpcts += $kpct;
+   for my $ar ( @{$byAmount{$sumcents}} ) {  # for now, no sorting (I expect `scalar @{$byAmount{$sumcents}}` > 1 approximately never)
+      printf "%-*s %s %s\n", $maxLen1, @{$ar}[0], @{$ar}[1], $pd;
       }
    }
 
 my $moncents = $allcents / $opt_m;
-printf( "   %-21s %5d.%02d / %d = %5d.%02d\n", "TOTAL", $allcents / 100, $allcents % 100, $opt_m, $moncents / 100, $moncents % 100 );
+printf( "%-*s %s / %d = %s %s\n", $maxLen1, $r1total, $c2dcp->($allcents), $opt_m, $c2dcp->($moncents), kpct2st( $allkpcts ) );

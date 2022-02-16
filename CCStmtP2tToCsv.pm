@@ -46,7 +46,8 @@ sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact fl
    return $cents;
    };
 
-sub cents_to_dc_pretty { my ($cents) = @_; sprintf "%5d.%02d", $cents / 100, $cents % 100; }
+my $maxdollarMagnitude = 5;  # we don't expect to be dealing with amounts over $99999.99 (mark my words!)
+sub cents_to_dc_pretty { my ($cents,$dw) = @_; sprintf( "%*d.%02d", $dw // $maxdollarMagnitude, $cents / 100, $cents % 100 ); }
 sub cents_to_dc        { my ($cents) = @_; sprintf  "%d.%02d", $cents / 100, $cents % 100; }
 
 sub _genkey { my $self = shift; my $aref = shift;
