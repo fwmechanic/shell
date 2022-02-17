@@ -29,9 +29,7 @@ sub ym_to_st { sprintf "%04d.%02d", $_[0], $_[1]; }
 my $minym = ym_to_st( $tmin->year, $tmin->mon );
 my $maxym = ym_to_st( $tmax->year, $tmax->mon );
 
-sub kpct2st { my ($pct) = @_; sprintf( "%3d.%01d%%", $pct / 10, $pct % 10 ); }
-
-print "$opt_m month report interval: [$minym..$maxym]\n";
+printf "%2d month report interval: [%s..%s]\n", $opt_m, $minym, $maxym;
 
 my $allcents = 0;
 my $r1total = "   TOTAL";  # 3 leading spaces track "%2d " in $r1 sprintf
@@ -75,23 +73,24 @@ for my $fnm ( @ARGV ) {  # print "$fnm\n";
          next;
          }
       }
-   my $moncents = $sumcents / $opt_m;
-   my $r1 = sprintf( "%2d %s", $hits, $billnm );  $maxLen1 = length $r1 if $maxLen1 < length $r1;
-   my $r2 = sprintf( "%s / %d = %s", $c2dcp->( $sumcents ), $opt_m, $c2dcp->($moncents) );
-   push @{$byAmount{$sumcents}}, [ $r1, $r2 ];
-   # printf "sc=%9d\n", $sumcents;
-   $allcents += $sumcents;
+   if( $sumcents > 0 ) {
+      my $moncents = $sumcents / $opt_m;
+      my $r1 = sprintf( "%2d %s", $hits, $billnm );  $maxLen1 = length $r1 if $maxLen1 < length $r1;
+      my $r2 = sprintf( "%s / %d = %s", $c2dcp->( $sumcents ), $opt_m, $c2dcp->($moncents) );
+      push @{$byAmount{$sumcents}}, [ $r1, $r2 ];
+      # printf "sc=%9d\n", $sumcents;
+      $allcents += $sumcents;
+      }
    }
 
 my $allkpcts = 0;
 for my $sumcents (sort { $b <=> $a } keys %byAmount) {
    my $kpct = ($sumcents * 1000) / $allcents;  # NB: "kilopercent"
-   my $pd = kpct2st( $kpct );
-   $allkpcts += $kpct;
+   my $pd = sprintf( "%3d.%01d%%", $kpct / 10, $kpct % 10 );
    for my $ar ( @{$byAmount{$sumcents}} ) {  # for now, no sorting (I expect `scalar @{$byAmount{$sumcents}}` > 1 approximately never)
       printf "%-*s %s %s\n", $maxLen1, @{$ar}[0], @{$ar}[1], $pd;
       }
    }
 
 my $moncents = $allcents / $opt_m;
-printf( "%-*s %s / %d = %s %s\n", $maxLen1, $r1total, $c2dcp->($allcents), $opt_m, $c2dcp->($moncents), kpct2st( $allkpcts ) );
+printf( "%-*s %s / %d = %s\n", $maxLen1, $r1total, $c2dcp->($allcents), $opt_m, $c2dcp->($moncents) );
