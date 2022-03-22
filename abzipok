@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+
+dieifnotinpath 7z
+
+dirs_in_archive() {
+   7z l "$1" | perl -lne '/^\d{4}\-\d{2}\-\d{2} \d{2}:\d{2}:\d{2}\Q D....\E\s+0\s+0\s+(\S.*)$/ && print "$1"'
+   }
+
+do1file() (
+   fnm="$1"  # ; echo "fnm=$1'"
+   [[ -f "$fnm" ]] || die "$fnm is not a file"
+
+   # break down $fnm:
+   fpath=""
+   if [[ $fnm == */* ]]; then
+      fpath="${fnm%/*}/"
+      cd "$fpath" || die "cd to $fpath failed"
+   fi                                   # ; echo "fpath=$fpath'"
+
+   sanspath="${1##*/}"       #  ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+   ext="${sanspath##*.}"     #  ; echo "ext=$ext'"
+   sansext="${sanspath%.*}"  #  ; echo "sansext=$sansext'"
+
+   dirs_in="$(dirs_in_archive "$fnm")"
+   if [ "$dirs_in" != "$sansext" ]; then
+      printf "%s needs repack: dirs_in: %s\n" "$fnm" "$dirs_in"
+      zf "$fnm"
+   else
+      printf "%s is good\n" "$fnm"
+   fi
+   )
+
+for fnm in "$@"; do
+   do1file "$fnm"
+done
