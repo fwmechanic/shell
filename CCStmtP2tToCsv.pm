@@ -1,7 +1,7 @@
 package CCStmtP2tToCsv;
 
 # seeking to convert a credit card PDF statement content to CSV or similar
-# I stumbled across the fact that git-bash includes pdftotext, and
+# I stumbled across the fact that (Windows) git-bash includes pdftotext, and
 # that pdftotext's "simple" mode does a very fine job of extracting what I need
 # (in the case perhaps ONLY of this particular CC company's PDF statement)!
 # What's left is to slice and dice the "simple" output.  It's only a bit hacky.

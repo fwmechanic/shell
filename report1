@@ -44,7 +44,7 @@ for my $fnm ( @ARGV ) {  # print "$fnm\n";
          && ($ym le $maxym)
         ) {  #
          my $cents = CCStmtP2tToCsv::tocents($dc);
-           printf "   %-10s += %s %s\n", $billnm, $ym, $c2dcp->($cents) if $opt_v;
+         printf "   %-10s += %s %s\n", $billnm, $ym, $c2dcp->($cents) if $opt_v;
          # print "$billnm: $yr.$mon : $dc\n";
          $sumcents += $cents;
          ++$hits;
