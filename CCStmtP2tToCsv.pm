@@ -107,14 +107,14 @@ sub rmv_section_hdr { my $self = shift; my ($lprex) = @_;
    $self->_updt_section_hdr_re() if delete( $self->{section_parsers}{ $lprex } );
    }
 sub _section_parsers_report { my $self = shift;
-   printf "\n%d section_parsers used:\n", scalar @{$self->{sections_seen}};
-   for my $lpnorm ( sort @{$self->{sections_seen}} ) {
-      print "   ", $lpnorm, "\n";
-      }
-   printf "\n%d unmatched section_parsers:\n", scalar keys %{$self->{section_parsers}};
+   printf "\nsection_parsers\n  unmatched: %d\n", scalar keys %{$self->{section_parsers}};
    for my $lprex ( sort keys %{$self->{section_parsers}} ) {
-      print "   ", $lprex =~ s!\Q\s+! !gr, "\n";
+      print "    ", $lprex =~ s!\Q\s+! !gr, "\n";
       }
+   printf "  matched: %d\n    sorted: %s\n    order seen:\n"
+      , scalar @{$self->{sections_seen}}
+      , join('|', sort @{$self->{sections_seen}});
+   print "      ", $_, "\n" for @{$self->{sections_seen}};
    }
 sub add_txn { my $self = shift; my ($aref,$postdate,$cents,$descr,$ctx,$src) = @_;
    my $txtype = $aref->[0];  # semi-hack
