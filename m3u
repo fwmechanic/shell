@@ -54,13 +54,25 @@ my $m3u_filename = $opt_n || ($opt_r or scalar @ARGV) && "playlist.m3u" || "00.m
 my @args = @ARGV;
    @args = ($startDir) unless @args;
 
+my ($reRename,$reM3u);
+{
+my @playableExts   = qw( mp3 mp4 mpg m4a m4b wmv flac f4v flv );
+my @renameOnlyExts = qw( srt );
+sub extRE {
+   my $rv = '\.(?i)(?:' . join('|', @_) . ')$'; # print "\npat=$rv\n";
+   return qr($rv);
+   }
+$reRename = extRE( @playableExts, @renameOnlyExts );
+$reM3u    = extRE( @playableExts );
+}
+
 my @renames;
 my %eachdir;
 sub eachFile { # even if this appears nasty, GLOB is NOT a better alternative!
    my $thisDir = $File::Find::dir;
    ++$eachdir{$thisDir}; # we will generate a m3u file in eachdir PROVIDED it or any of its child dirs contain @playablefiles
    my $file = $File::Find::name;                       print "F1=$file\n";
-   if( m!\.(?:mp[34g]|m4[ab]|wmv|flac|f[l4]v)$!i ) {
+   if( $_ =~ $reRename ) {
       my $nmsq = $_ =~ s!\s*\-\s*!-!gr;              # print "F1nmsq=$nmsq\n";
       if( my ($tnum,$tnam) = $nmsq =~ m!(^(?:\d+\.)?\d+)[-\s\.]+([^-\.\s].*)$! ) {
          my $newfnm = "$tnum-$tnam";
@@ -73,7 +85,7 @@ sub eachFile { # even if this appears nasty, GLOB is NOT a better alternative!
             $file = $newfnmFull;
             }
          }
-      push( @playablefiles, $file );
+      push( @playablefiles, $file ) if $_ =~ $reM3u;
       }
    }
 
