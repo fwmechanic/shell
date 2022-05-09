@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# purpose: hack to extract VO2max data from Apple Watch export.xml mega-dump
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+[[ "$1" ]] || die "missing export.xml filename"
+[[ -f "$1" ]] || die "input file $1 does not exist"
+of="$1".csv
+echo "date,VO2max" > "$of"
+# https://stackoverflow.com/a/42744056
+xml sel -t -m "//HealthData/Record[@type='HKQuantityTypeIdentifierVO2Max']" -v "concat(@startDate,',',@value)" -n "$1" >> "$of"
+echo "written to $of"
