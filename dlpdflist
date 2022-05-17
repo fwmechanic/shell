@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# https://unix.stackexchange.com/a/700710
+
+# extract all links to pdf files from a web page $url into a file, one pdfurl per line
+
+# STRONGLY advise running this in a dedicated directory (especially if you're planning to `curl -fSsO "$pdfurl"` each pdfurl)
+
+# this is a BASIC TOOLKIT to be used as a basis for situational customization
+
+intermed="index.html"
+
+url='https://hsr.ca.gov/programs/environmental-planning/project-section-environmental-documents-tier-2/san-jose-to-merced-project-section-final-environmental-impact-report-environmental-impact-statement/'
+
+rm -f "$intermed" && curl -fsSo "$intermed" "$url" && [[ -f "$intermed" ]] &&
+xml format -H "$intermed" 2>/dev/null |
+xml select -t -m '//a[contains(@href,"pdf")]' -v '@href' -n > pdfurls.txt
