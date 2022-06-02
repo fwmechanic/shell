@@ -30,6 +30,7 @@ excl_nonebook_files() (
     -iname "*.lit" -or \
     -iname "*.fb2" -or \
     -iname "*.rtf" -or \
+    -iname "*.url" -or \
     -iname "*.opf" -or \
     -iname "*.DS_Store" \) -delete
    find . -type f ! \( \

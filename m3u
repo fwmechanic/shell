@@ -57,7 +57,7 @@ my @args = @ARGV;
 my ($reRename,$reM3u);
 {
 my @playableExts   = qw( mp3 mp4 mpg m4a m4b wmv flac f4v flv );
-my @renameOnlyExts = qw( srt );
+my @renameOnlyExts = qw( srt vtt );
 sub extRE {
    my $rv = '\.(?i)(?:' . join('|', @_) . ')$'; # print "\npat=$rv\n";
    return qr($rv);
