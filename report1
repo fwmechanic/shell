@@ -8,8 +8,6 @@ use English;
 use Getopt::Std;  $Getopt::Std::STANDARD_HELP_VERSION = 1;
 use File::Basename;
 use File::Find;
-use Time::Piece;
-use Time::Seconds;
 
 use FindBin;
 use lib $FindBin::Bin;
@@ -21,13 +19,21 @@ our ($opt_v,$opt_m);
 getopts( "m:v" ) or die;
 
 $opt_m //= 12; # last N full months (i.e. not including current month which is assumed to be incomplete)
-my $tmax = localtime;
-   $tmax = $tmax - (      1    * ONE_MONTH);  # https://stackoverflow.com/a/17601119
-my $tmin = $tmax - (($opt_m-1) * ONE_MONTH);  # https://stackoverflow.com/a/17601119
-
-sub ym_to_st { sprintf "%04d.%02d", $_[0], $_[1]; }
-my $minym = ym_to_st( $tmin->year, $tmin->mon );
-my $maxym = ym_to_st( $tmax->year, $tmax->mon );
+$opt_m > 0 or die "-m option argument must be number > 0\n";
+sub init {
+   sub decmm { my($yy,$mm,$decm) = @_;
+      my $mmm = ($yy * 12) + ($mm - 1);
+      my $decd = $mmm - $decm;
+      my @rv = (int($decd / 12), ($decd % 12) + 1);  # print "$yy,$mm,$decm; $mmm -> $decd; $rv[0] :: $rv[1]\n";
+      return @rv;
+      }
+   my ($nowyy,$nowmm) = (localtime)[5,4]; $nowyy += 1900; $nowmm += 1;
+   sub ym_to_st { sprintf "%04d.%02d", $_[0], $_[1]; }
+   (ym_to_st(decmm( $nowyy,$nowmm, $opt_m )),
+    ym_to_st(decmm( $nowyy,$nowmm, 1      ))
+   );
+   }
+my ($minym,$maxym) = &init;
 
 printf "%2d month report interval: [%s..%s]\n", $opt_m, $minym, $maxym;
 
