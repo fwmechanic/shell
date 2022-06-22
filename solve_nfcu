@@ -1,0 +1,90 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use English;
+
+use FindBin;
+use lib $FindBin::Bin;
+use CCStmtP2tToCsv;  # utility fxns & constants
+my $rpmdamtcapt = CCStmtP2tToCsv::rpmdamtcapt();
+my $c2dcp = \&CCStmtP2tToCsv::cents_to_dc_pretty;  # brevity
+my $tocents = \&CCStmtP2tToCsv::tocents;  # brevity
+
+my ($currbal,$availbal,$beginbal);
+my ($pendgreendep);
+# pretty much the cause of this script's existence: fucking NFCU generously
+# immmediately (regardless of hold, maybe) "fronts" (adds to available balance)
+# the first $225 of a day's total deposit amount.  If deposits are made on
+# sequential days, and are kept on hold, each day's held deposit contributes its
+# first $225 to the available balance (but this is shown NOWHERE in the ledger
+# etc.) making it difficult to ascertain which deposits have cleared (taken off
+# arbitrary 5-day hold).
+#
+# how this hack works:
+# download from NFCU a CSV containing a partial account ledger
+# into the first lines of this CSV, insert
+#
+#    currbal  123.45      # current now balance shown in NFCU web UI
+#    availbal     758.66  # avail now balance shown in NFCU web UI
+#    beginbal     1125.45 # avail balance at date just prior to first txn in CSV
+#    pendgreendep         # <- add this iff a deposit has been made this day and NFCU register show a pending deposit for $225.00 ($ amount shown in green)
+#
+# ./solve_nfcu name.CSV
+#
+my (%deps,%depsums);
+my $txndebits = 0;
+my $nfcu_front_amt = 22500;
+
+my $dq = '"';
+my $reamt = qr{\d*\.\d{2}};
+
+while( <> ) {
+   my $amt;
+   if(    ($amt) = m!^currbal\s+($reamt)\s*$!  ) { $currbal  = $tocents->($amt); print "currbal  = ",$c2dcp->($currbal ),"\n"; }
+   elsif( ($amt) = m!^availbal\s+($reamt)\s*$! ) { $availbal = $tocents->($amt); print "availbal = ",$c2dcp->($availbal),"\n"; }
+   elsif( ($amt) = m!^beginbal\s+($reamt)\s*$! ) { $beginbal = $tocents->($amt); print "beginbal = ",$c2dcp->($beginbal),"\n"; }
+   elsif( ($amt) = m!^pendgreendep\s*$! )        { $pendgreendep = $nfcu_front_amt; print "pendgreendep = ",$c2dcp->($pendgreendep),"\n"; }
+   elsif( my ($m1,$m2,$d1,$d2,$yyyy,$item,$debit,$credit) = m!^$dq(\d?)(\d)/(\d?)(\d)/(\d{4})$dq,$dq\d*$dq,$dq([^$dq]+)$dq,$dq((?:$reamt)?)$dq,$dq((?:$reamt)?)$dq! ) {
+      $currbal   or die "txn before currbal seen\n";
+      $availbal or die "txn before availbal seen\n";
+      $beginbal or die "txn before beginbal seen\n";
+      $debit or $credit or die "neither debit nor credit\n";
+      $m1 = length($m1) > 0 ? $m1 : '0';
+      $d1 = length($d1) > 0 ? $d1 : '0';
+      my $yyyymmdd = "$yyyy$m1$m2$d1$d2";
+      my $dc = $debit ? -$tocents->($debit) : $tocents->($credit);
+      my $dcp = $c2dcp->($dc);
+      print "txn @ $yyyymmdd: $dcp $item\n";
+      if( $dc < 0 || $item eq "Dividend" ) {
+         $txndebits += $dc;
+         }
+      else {
+         push @{$deps{$yyyymmdd}}, $dcp;
+         $depsums{$yyyymmdd} += $dc;
+         }
+      }
+   else { die "bad line: $_";
+      }
+   }
+
+print "txndebits = ",$c2dcp->($txndebits),"\n";
+my $sum = $beginbal+$txndebits+$pendgreendep;
+print "beginbal + txndebits + pendgreendep = ",$c2dcp->($sum),"\n";
+
+for my $ymd ( sort keys %depsums ) {
+   my $dep = $depsums{$ymd};
+   my $front = $dep < $nfcu_front_amt ? $dep : $nfcu_front_amt;
+   my ($add,$anno);
+   if( $sum + $dep <= $availbal ) { # full amount has cleared
+      $add = $dep;
+      $anno = "CLEARED";
+      }
+   else {
+      $add = $front;
+      $anno = "HELD   ";
+      }
+   my $newsum = $sum + $add;
+   print "@ $ymd ",$c2dcp->($sum)," + ",$c2dcp->($add)," = ",$c2dcp->($newsum),"; pending ",$c2dcp->($dep-$front)," $anno checks: ",join ' ',@{$deps{$ymd}},"\n";
+   $sum = $newsum;
+   }
