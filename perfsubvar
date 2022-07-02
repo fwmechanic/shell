@@ -1,0 +1,25 @@
+#!/bin/bash
+# from http://rus.har.mn/blog/2010-07-05/subshells/
+for i in variable subshell; do
+   echo -e "\n$i"; time ./$i > /dev/null
+   done
+
+# results 22.07 on Win10 4700u laptop are massively worse for subshell vs the (8 year old) article (presumably run on Linux)
+#         presumably because Windows!
+#
+# $ echo $BASH_VERSION
+# 4.4.23(1)-release
+#
+# $ ./perfsubvar
+#
+# variable
+#
+# real    0m0.157s
+# user    0m0.109s
+# sys     0m0.030s
+#
+# subshell
+#
+# real    1m39.856s
+# user    0m24.343s
+# sys     0m53.911s
