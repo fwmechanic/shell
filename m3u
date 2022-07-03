@@ -47,45 +47,45 @@ my $startDir = cwd(); # print "startDir=$startDir\n";
 my $startDirRe = '^' . quotemeta($startDir) . '/';
 
 my @playablefiles;
-my $m3u_filename = $opt_n || ($opt_r or scalar @ARGV) && "playlist.m3u" || "00.m3u";
+#  $m3u_filename = $opt_n || ($opt_r or scalar @ARGV) && "playlist.m3u" || "00.m3u";
+my $m3u_filename = $opt_s                             && "playlist.m3u" || "00.m3u";
 
 # { local $LIST_SEPARATOR = "\n"; print "\@ARGV=@ARGV\n"; }
 
 my @args = @ARGV;
    @args = ($startDir) unless @args;
 
-my ($reRename,$reM3u);
-{
-my @playableExts   = qw( mp3 mp4 mpg m4a m4b wmv flac f4v flv );
-my @renameOnlyExts = qw( srt vtt );
-sub extRE {
-   my $rv = '\.(?i)(?:' . join('|', @_) . ')$'; # print "\npat=$rv\n";
-   return qr($rv);
-   }
-$reRename = extRE( @playableExts, @renameOnlyExts );
-$reM3u    = extRE( @playableExts );
-}
+my ($reRename,$reM3u) = do {
+   my @playableExts   = qw( mp3 mp4 mpg m4a m4b wmv flac f4v flv );
+   my @playAssistExts = qw( srt vtt );
+   sub extRE {
+      my $rv = '\.(?i)(?:' . join('|', @_) . ')$'; # print "\npat=$rv\n";
+      return qr($rv);
+      }
+   ( extRE( @playableExts, @playAssistExts )
+   , extRE( @playableExts )
+   )
+   };
 
 my @renames;
 my %eachdir;
 sub eachFile { # even if this appears nasty, GLOB is NOT a better alternative!
-   my $thisDir = $File::Find::dir;
+   return unless -f $_;                              # print "F0=$_\n";        # sanspath i.e. leaf name: might be a dir; ignore these
+   my $thisDir = $File::Find::dir;                   # print "D0=$thisDir\n";  # NB !!! WE ARE CD'D INTO $thisDir !!!
+   my $fullnm = $File::Find::name;                     print "F1=$fullnm\n";   # "$File::Find::dir/$_"
    ++$eachdir{$thisDir}; # we will generate a m3u file in eachdir PROVIDED it or any of its child dirs contain @playablefiles
-   my $file = $File::Find::name;                       print "F1=$file\n";
    if( $_ =~ $reRename ) {
-      my $nmsq = $_ =~ s!\s*\-\s*!-!gr;              # print "F1nmsq=$nmsq\n";
-      if( my ($tnum,$tnam) = $nmsq =~ m!(^(?:\d+\.)?\d+)[-\s\.]+([^-\.\s].*)$! ) {
-         my $newfnm = "$tnum-$tnam";
-         if( $newfnm ne $_ ) {
-            my $newfnmFull = "$thisDir/$newfnm";
-            my $newfnmSd = $newfnmFull =~ s!$startDirRe!!r;
-            my $fileSd   = $file       =~ s!$startDirRe!!r;
-            # print "rename\n'$fileSd'\n'$newfnmSd'\n";
-            push @renames, [ $fileSd, $newfnmSd ];
-            $file = $newfnmFull;
-            }
+      my  $newfnm = $_ =~ s!\s*\-\s*!-!gr;           # print "F1newfnm=$newfnm\n";
+          $newfnm =~ s!(^(?:\d+\.)?\d+)[-\s\.]+([^-\.\s].*)$!$1-$2!;
+      if( $newfnm ne $_ ) {
+         my $newfnmFull = "$thisDir/$newfnm";
+         my $newfnmSd = $newfnmFull =~ s!$startDirRe!!r;
+         my $fileSd   = $fullnm     =~ s!$startDirRe!!r;
+         # print "rename\n'$fileSd'\n'$newfnmSd'\n";
+         push @renames, [ $fileSd, $newfnmSd ];
+         $fullnm = $newfnmFull;
          }
-      push( @playablefiles, $file ) if $_ =~ $reM3u;
+      push( @playablefiles, $fullnm ) if $_ =~ $reM3u;
       }
    }
 
@@ -133,7 +133,7 @@ sub write_m3u { my ($destdir,$aref) = @_; # print "F0=$destdir\n";
          push @results, $fnm_rel;
          }
       }
-   wr_array( "$destdir/$m3u_filename", \@results ) if @results > 1;
+   wr_array( "$destdir/$m3u_filename", \@results ) if @results > 1;  # no playlist file needed for single playable file
    }
 
 write_m3u( $_, \@playablefiles ) for ( sort keys %eachdir );
