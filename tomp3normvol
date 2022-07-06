@@ -11,7 +11,9 @@ read_mean_volume_neg_db() (
    ffmpeg -i "$1" -vn -sn -dn -af "volumedetect" -f null /dev/null 2>&1 >/dev/null | perl -lne '/mean_volume: \-(\d+)\.\d+ dB/ && print $1'
    )
 
-outfnm_suffix="_normvol.mp3"
+destext=mp3
+
+outfnm_suffix="_normvol.$destext"
 
 normvol_to_mp3() (
    # set -x
@@ -19,7 +21,7 @@ normvol_to_mp3() (
    [[ -f "$outfnm" && "$outfnm" -nt "$1" ]] && die "exists $outfnm"
    dbadj="$(read_mean_volume_neg_db "$1")" || die "read_mean_volume_neg_db failed on $1"
    printf "+%3ddB %s\n" "$dbadj" "$outfnm"
-   ffmpeg -i "$1" -y -f mp3 -q:a 0 -af "volume=${dbadj}dB" "$outfnm" 2> /dev/null || die "normvol failed on $1"
+   ffmpeg -i "$1" -y -f "$destext" -q:a 0 -af "volume=${dbadj}dB" "$outfnm" 2> /dev/null || die "normvol failed on $1"
    )
 
 for fnm in "$@"; do

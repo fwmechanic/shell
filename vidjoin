@@ -8,18 +8,24 @@
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 
-dfltofnm="out.mp4"
-listfnm="ffmpg_join.tmp"
-# ffmpeg -i "concat:out0.mp4|out1.mp4" -c copy "$dfltofnm"
+listfnm="vidjoin.tmp"
 
-if1="${1:-"out0.mp4"}"
-if2="${2:-"out1.mp4"}"
+if1="${1:-"out0.mp4"}" ; [[ -f "$if1" ]] || die "$if1 is not a file"
+if2="${2:-"out1.mp4"}" ; [[ -f "$if2" ]] || die "$if2 is not a file"
+
+# ffmpeg behavior is dependent on even _output_ file's extension!
+sanspath="${if1##*/}" #  ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+ext="${sanspath##*.}" ; [[ "$ext" ]] || die "no extension?"  #  ; echo "ext=$ext'"
+
+dfltofnm="out.$ext"
+# ffmpeg -i "concat:$if1|$if2" -c copy "$dfltofnm"
 
 rm -f "$listfnm" || die "rm failed?"
 cat <<HEREDOC > "$listfnm"
 file '$if1'
 file '$if2'
 HEREDOC
+cat "$listfnm"
 
 # stdin process substitution
 #    cat <( printf '%s\n%s\n' "file '$if1'" "file '$if2'" )
