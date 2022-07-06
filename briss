@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+fbindir() ( find ~/my/bin/ -mindepth 2 -maxdepth 2 -ipath ~/my/bin/"$1"'*'/bin )
+
+runbriss() ( "$(fbindir zulu11)"/java -jar ~/my/repos/briss2/target/briss-1.0-rc.2.jar "$1" ) # -Dorg.jpedal.jai=true causes hang
+
+runbriss "$1"
