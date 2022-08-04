@@ -55,9 +55,12 @@ while( <> ) {
    elsif( ($amt) = m!^beginbal\s+($reamt)\s*! ) { $beginbal = $tocents->($amt); print "beginbal = ",$c2dcp->($beginbal),"\n"; }
    elsif( ($amt) = m!^pendgreendep\s*! )        { $pendgreendep = $nfcu_front_amt; print "pendgreendep = ",$c2dcp->($pendgreendep),"\n"; }
    elsif( m!^"Date","No.","Description","Debit","Credit"$! ) {
-      $currbal   or die "txn before currbal seen\n";
+      $currbal  or die "txn before currbal seen\n";
       $availbal or die "txn before availbal seen\n";
       $beginbal or die "txn before beginbal seen\n";
+      $currbal - $availbal != 0 or die "currbal == availbal; nothing to do\n";
+      print 'total $ HELD: ', $c2dcp->( $currbal - $availbal ), "\n";
+
       }
    elsif( my ($m1,$m2,$d1,$d2,$yyyy,$item,$debit,$credit) = m!^$dq(\d?)(\d)/(\d?)(\d)/(\d{4})$dq,$dq\d*$dq,$dq([^$dq]+)$dq,$dq((?:$reamt)?)$dq,$dq((?:$reamt)?)$dq! ) {
       $debit or $credit or die "neither debit nor credit\n";
@@ -95,11 +98,12 @@ print "beginbal + definitelyClearedTxnSum + pendgreendep = ",$c2dcp->($sum),"\n"
 for my $ymd ( sort keys %depsums ) {
    my $dep = $depsums{$ymd};
    my $front = $dep < $nfcu_front_amt ? $dep : $nfcu_front_amt;
-   my ($add,$anno);
-   if( $sum + $dep <= $availbal ) { $add = $dep;   $anno = "CLEARED"; } # full amount has cleared to avail bal
-   else                           { $add = $front; $anno = "HELD   "; } # only fronted amount has been added to avail bal
+   my ($add,$anno,$held);
+   if( $sum + $dep <= $availbal ) { $anno = 'CLEARED'.' 'x11; $add = $dep;   $held = 0; } # full amount has cleared to avail bal
+   else                           { $anno = 'HELD'   ; $add = $sum == $availbal ? 0 : $front; $held = $dep-$add;  } # only fronted amount has been added to avail bal
+
    my $newsum = $sum + $add;
-   print "@ $ymd ",$c2dcp->($sum)," + ",$c2dcp->($add)," = ",$c2dcp->($newsum),"; pending ",$c2dcp->($dep-$front)," $anno checks:",join ' ',@{$deps{$ymd}},"\n";
+   print "@ $ymd ",$c2dcp->($sum)," + ",$c2dcp->($add)," = ",$c2dcp->($newsum)," $anno ",($held!=0 ? $c2dcp->($held) . ' from ' : ''), "checks:",join ' ',@{$deps{$ymd}},"\n";
    $sum = $newsum;
    }
 print "calculated balance matches supplied Available Balance: result accurate\n" if $sum == $availbal;
