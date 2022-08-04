@@ -99,11 +99,11 @@ for my $ymd ( sort keys %depsums ) {
    my $dep = $depsums{$ymd};
    my $front = $dep < $nfcu_front_amt ? $dep : $nfcu_front_amt;
    my ($add,$anno,$held);
-   if( $sum + $dep <= $availbal ) { $anno = 'CLEARED'.' 'x11; $add = $dep;   $held = 0; } # full amount has cleared to avail bal
+   if( $sum + $dep <= $availbal ) { $anno = 'CLEARED'.' 'x16; $add = $dep;   $held = 0; } # full amount has cleared to avail bal
    else                           { $anno = 'HELD'   ; $add = $sum == $availbal ? 0 : $front; $held = $dep-$add;  } # only fronted amount has been added to avail bal
-
-   my $newsum = $sum + $add;
-   print "@ $ymd ",$c2dcp->($sum)," + ",$c2dcp->($add)," = ",$c2dcp->($newsum)," $anno ",($held!=0 ? $c2dcp->($held) . ' from ' : ''), "checks:",join ' ',@{$deps{$ymd}},"\n";
-   $sum = $newsum;
+   print "@ $ymd ",$c2dcp->($sum)," + ",$c2dcp->($add),' '
+         ,($held!=0 ? 'fronted, ' . $c2dcp->($held) . " $anno, " : "$anno ")
+         , "checks:",join ' ',@{$deps{$ymd}},"\n";
+   $sum += $add;
    }
 print "calculated balance matches supplied Available Balance: result accurate\n" if $sum == $availbal;
