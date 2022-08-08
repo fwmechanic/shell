@@ -41,14 +41,14 @@ sub rpmdamtcapt { '\s+([-+]?\$?[\d,]*\.\d{2})\b'; }
 sub tocents { my ($dcstr) = @_;  # convert currency to cents to avoid inexact floating point ops
    $dcstr =~ s/[,\$]//g;
    my ($sign,$dol,$cents) = $dcstr =~ /^([-+]?)(\d*)\.(\d{2})$/;
-   $cents = ((($dol || 0) * 100) + $cents);
+   $cents = int( "$dol$cents" );
    $cents = 0 - $cents if $sign eq '-';
    return $cents;
    };
 
 my $maxdollarMagnitude = 5;  # we don't expect to be dealing with amounts over $99999.99 (mark my words!)
-sub cents_to_dc_pretty { my ($cents,$dw) = @_; sprintf( "%*d.%02d", $dw // $maxdollarMagnitude, $cents / 100, $cents % 100 ); }
-sub cents_to_dc        { my ($cents) = @_; sprintf  "%d.%02d", $cents / 100, $cents % 100; }
+sub cents_to_dc_pretty { my ($cents,$dw) = @_; return sprintf "%*d.%02d", $dw // $maxdollarMagnitude, $cents / 100, abs($cents) % 100; }
+sub cents_to_dc        { my ($cents)     = @_; return sprintf "%d.%02d"                             , $cents / 100, abs($cents) % 100; }
 
 sub _genkey { my $self = shift; my $aref = shift;
    my $rv = join( '::', @$aref );
