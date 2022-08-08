@@ -28,15 +28,16 @@ my $nfcu_front_amt = 22500;
 # download from NFCU a CSV containing a partial account ledger
 # into the first lines of this CSV, insert
 #
-#    currbal  123.45      # current now balance shown in NFCU web UI
-#    availbal     758.66  # avail now balance shown in NFCU web UI
+#    currbal     1123.45  # current balance shown in NFCU web UI
+#    availbal     758.66  # avail balance shown in NFCU web UI (must be less than currbal)
 #    beginbal     1125.45 # avail balance at date just prior to first txn in CSV
 #    pendgreendep         # <- add this iff a deposit has been made this day and NFCU register shows a pending deposit for $225.00 ($ amount shown in green)
 #
-# Live and learn: circa "closing time" (after hours of a biz day) the CSV
-# download does not include the most recent day's txns which ARE visible in the
-# web UI register.  By the following morning, the CSV download is sync'd with the
-# online register.
+# !!!  NB !!!: circa "closing time" (after hours of a biz day, when the web UI
+# register updates to show the day's transactions) the CSV download DOES NOT
+# include the day's txns.  By the following morning (or perhaps when the daily
+# "Current Balance" email is received?), the CSV download has caught up with the
+# web UI register.
 
 my ($currbal,$availbal,$beginbal);
 my $pendgreendep = 0;
@@ -54,13 +55,12 @@ while( <> ) {
    elsif( ($amt) = m!^availbal\s+($reamt)\s*! ) { $availbal = $tocents->($amt); print "availbal = ",$c2dcp->($availbal),"\n"; }
    elsif( ($amt) = m!^beginbal\s+($reamt)\s*! ) { $beginbal = $tocents->($amt); print "beginbal = ",$c2dcp->($beginbal),"\n"; }
    elsif( ($amt) = m!^pendgreendep\s*! )        { $pendgreendep = $nfcu_front_amt; print "pendgreendep = ",$c2dcp->($pendgreendep),"\n"; }
-   elsif( m!^"Date","No.","Description","Debit","Credit"$! ) {
+   elsif( m!^"Date","No.","Description","Debit","Credit"$! ) {  # 1st line of NFCU-generated CSV; we leave it and use it as a separator
       $currbal  or die "txn before currbal seen\n";
       $availbal or die "txn before availbal seen\n";
       $beginbal or die "txn before beginbal seen\n";
-      $currbal - $availbal != 0 or die "currbal == availbal; nothing to do\n";
+      # $currbal - $availbal != 0 or die "currbal == availbal; nothing to do\n";
       print 'total $ HELD: ', $c2dcp->( $currbal - $availbal ), "\n";
-
       }
    elsif( my ($m1,$m2,$d1,$d2,$yyyy,$item,$debit,$credit) = m!^$dq(\d?)(\d)/(\d?)(\d)/(\d{4})$dq,$dq\d*$dq,$dq([^$dq]+)$dq,$dq((?:$reamt)?)$dq,$dq((?:$reamt)?)$dq! ) {
       $debit or $credit or die "neither debit nor credit\n";
@@ -70,7 +70,7 @@ while( <> ) {
       my $dc = $debit ? -$tocents->($debit) : $tocents->($credit);
       my $dcp = $c2dcp->($dc);
       print "txn @ $yyyymmdd: $dcp $item\n";
-      if( $dc < 0 || $item eq "Dividend" ) {  # Dividends are never held
+      if( $item ne "eDeposit-ScanMobile" ) {  # Dividends are never held
          $definitelyClearedTxnSum += $dc;
          }
       else {
