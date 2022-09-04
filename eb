@@ -21,17 +21,19 @@ excl_nonebook_files() (
    rm -rf "$xdnm:?"/*   # in case dir already existed, nuke its content
    # rmv typical "advertising" files embedded in www downloads; extensions that never contain content we want to keep
    find . -type f \( \
-    -iname "*.txt" -or \
+    -iname "*.docx" -or \
+    -iname "*.fb2" -or \
     -iname "*.html" -or \
-    -iname "*.jpg"  -or \
+    -iname "*.htmlz" -or \
     -iname "*.jpeg" -or \
+    -iname "*.jpg"  -or \
+    -iname "*.lit" -or \
+    -iname "*.opf" -or \
     -iname "*.pdb" -or \
     -iname "*.png" -or \
-    -iname "*.lit" -or \
-    -iname "*.fb2" -or \
     -iname "*.rtf" -or \
+    -iname "*.txt" -or \
     -iname "*.url" -or \
-    -iname "*.opf" -or \
     -iname "*.DS_Store" \) -delete
    find . -type f ! \( \
     -iname "*.epub" -or \
