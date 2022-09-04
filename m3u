@@ -70,10 +70,10 @@ my ($reRename,$reM3u) = do {
 my @renames;
 my %eachdir;
 sub eachFile { # even if this appears nasty, GLOB is NOT a better alternative!
-   return unless -f $_;                              # print "F0=$_\n";        # sanspath i.e. leaf name: might be a dir; ignore these
    my $thisDir = $File::Find::dir;                   # print "D0=$thisDir\n";  # NB !!! WE ARE CD'D INTO $thisDir !!!
-   my $fullnm = $File::Find::name;                     print "F1=$fullnm\n";   # "$File::Find::dir/$_"
    ++$eachdir{$thisDir}; # we will generate a m3u file in eachdir PROVIDED it or any of its child dirs contain @playablefiles
+   return unless -f $_;                              # print "F0=$_\n";        # sanspath i.e. leaf name: might be a dir; ignore these
+   my $fullnm = $File::Find::name;                     print "F1=$fullnm\n";   # "$File::Find::dir/$_"
    if( $_ =~ $reRename ) {
       my  $newfnm = $_ =~ s!\s*\-\s*!-!gr;           # print "F1newfnm=$newfnm\n";
           $newfnm =~ s!(^(?:\d+\.)?\d+)[-\s\.]+([^-\.\s].*)$!$1-$2!;
@@ -103,7 +103,7 @@ for my $ar ( @renames ) {
    print "mv\n  '$fileSd'\n  '$newfnmSd'\n";
    rename $fileSd, $newfnmSd or die "rename of $fileSd -> $newfnmSd FAILED\n";
    }
-if( 0 == scalar keys %eachdir ) {
+if( ! %eachdir ) {
    ++$eachdir{$startDir}
    }
 
