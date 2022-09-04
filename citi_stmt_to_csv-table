@@ -13,6 +13,8 @@ use CCStmtP2tToCsv;
 my $opts = CCStmtP2tToCsv::getopts();
 
 my $rdt = '\d{2}/\d{2}';
+my $rchnam = '[A-Z][A-Z\s]+[A-Z]';  # assume length(cardholdername) >= 3
+my $rchsfx = '\s+Card\s+ending\s+in\s+\d{4}';
 my $rdesc = '\w.*\w';
 my $rpmdamtcapt = CCStmtP2tToCsv::rpmdamtcapt();
 my $rtxn = qr"\s+($rdt)\s+($rdesc)$rpmdamtcapt";
@@ -23,17 +25,19 @@ my($plus,$minus) = qw( credit charge );
 for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sorted (assumes stmt filenames are validly date-sortable)
    my $lp_GenericCharges = sub { my $self = shift; $self->parse_new_txn( $retxn, [$minus] ); };
    my $lp_Payments       = sub { my $self = shift; $self->parse_new_txn( $retxn, [$plus ] ); };
-   my ($cardholder);  # multiline parse support
+   my ($cardholder,$namish);  # multiline parse support
    my $lp_CardholderSummary = sub { my $self = shift;
       if( !defined($cardholder) ) {
-         if( m"^($rdesc)\s+Card\s+ending\s+in\s+\d{4}" ) { $cardholder = $1; print "cardholder = $cardholder\n"; }
+         if( defined( $namish ) && m"^$rchsfx" ) { $cardholder = $namish; undef $namish; print "cardholder = $cardholder\n"; return; }
+         if( m"^($rchnam)$rchsfx" )              { $cardholder = $1                    ; print "cardholder = $cardholder\n"; return; }
+         if( m"^($rchnam)\s" )                   { $namish = $1; return; }
          }
       elsif( m"^New\sCharges$rpmdamtcapt" ) {
          $self->rmv_section_hdr( $reStdPurch );  # if cardholders appear in stmt, $reStdPurch => $lp_GenericCharges is replaced by '$cardholder, sub ...'
          $self->set_total( [$minus,$cardholder], $1 );
          my $ch_capt = $cardholder;  # freeze this $cardholder value for closure
          $self->add_section_hdr( $cardholder, sub { my $self = shift; $self->parse_new_txn( $retxn, [$minus, $ch_capt] ); } );
-         $cardholder = undef;  # we're done with this $cardholder
+         undef $cardholder;  # we're done with this $cardholder
          }
       };
    my $lp_ignore = sub {;};
