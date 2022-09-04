@@ -12,7 +12,7 @@ use warnings;
 my (%byYr, %byYm);
 
 while( glob("*.jpg") ) {
-   my ($yr,$mon,$cents) = m/^(\d{4})(\d{2})\d{2}_\d{6}_(\d+)\./;
+   my ($yr,$mon,$cents) = m/^(?:PXL_)?(\d{4})(\d{2})\d{2}_\d{6}(?:\d{3})?_(\d+)\./;
    if( $cents ) {
       print "$_\n";
       $cents = 0 + $cents;
