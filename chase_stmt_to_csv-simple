@@ -13,9 +13,8 @@ use CCStmtP2tToCsv;
 my $opts = CCStmtP2tToCsv::getopts();
 
 my $rdt = '\d{2}/\d{2}';
-my $rdesc = '\w.*\w';
 my $rpmdamtcapt = CCStmtP2tToCsv::rpmdamtcapt();
-my $rtxn = qr"\s+($rdt)\s+($rdesc)$rpmdamtcapt";
+my $rtxn = qr"\s+($rdt)\s+(?:&\s)?(\w.*\w)$rpmdamtcapt";
 my $retxn = "^(?:$rdt)?$rtxn";
 my($plus,$minus) = qw( credit charge );
 
