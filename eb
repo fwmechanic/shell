@@ -21,6 +21,7 @@ excl_nonebook_files() (
    rm -rf "$xdnm:?"/*   # in case dir already existed, nuke its content
    # rmv typical "advertising" files embedded in www downloads; extensions that never contain content we want to keep
    find . -type f \( \
+    -iname "SHA1SUMS" -or \
     -iname "*.docx" -or \
     -iname "*.fb2" -or \
     -iname "*.html" -or \
@@ -28,6 +29,7 @@ excl_nonebook_files() (
     -iname "*.jpeg" -or \
     -iname "*.jpg"  -or \
     -iname "*.lit" -or \
+    -iname "*.lrf" -or \
     -iname "*.opf" -or \
     -iname "*.pdb" -or \
     -iname "*.png" -or \
@@ -59,6 +61,7 @@ do1file() (
 
    # purpose: given a typical ebook archive file (zip, rar) extracted into $sansext, delete non-ebook files and rename ebook files $sansext.ext
    ( cd "$sansext" && excl_nonebook_files ) || die "excl_nonebook_files failed"
+   ( cd "$sansext" && mv_calibre_junk ; rm -rf _calibre_junk )
    # some downloaded archives' files have timestamps newer than "now": touch them
    ( cd "$sansext" && find . -type f -newer "../$1" -printf 'from the future: %p\n' )
    ( cd "$sansext" && find . -type f -newer "../$1" -exec touch {} + )

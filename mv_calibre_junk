@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+# what/why: ebooks often come in archive-file sets which (I've taken awhile to
+# realize) often include calibre-format-translated versions of the ebook in
+# formats I don't care about (azw* and mobi); these are just deadweight
+# consumers of disk space: if I need the format, I'm perfectly able to use
+# calibre to generate a version of the file in the needed format; otherwise,
+# I want to delete them before they start consuming server (especially
+# backup) storage.
+#
+# Rather than delete such files, this script moves these files to a
+# _calibre_junk subdir; higher level scripts are free to rm -rf this dir
+#
+
+mkdir -p _calibre_junk || die
+
+find . -type f \( -iname '*.azw*' -o -iname '*.mobi' \) | while read -r file; do if ebook-meta "$file" | grep -qP '^Book Producer.+calibre' ; then see mv "$file" _calibre_junk ; fi  ; done
