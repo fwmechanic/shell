@@ -17,8 +17,8 @@ mvtovidres() {
    local dn="./$res/"
    # echo "$dn"
    # echo "${1}"
-   # echo "${1#${dn@E}}"
-   [[ "${1#${dn@E}}" != "${1}" ]] && return  # if file already located in target dir $dn
+   # echo "${1#"${dn@E}"}"
+   [[ "${1#"${dn@E}"}" != "${1}" ]] && return  # if file already located in target dir $dn
 
    [[ -d "$res" ]] || mkdir -- "$dn"
    [[ -d "$res" ]] && see mv -- "$1" "$dn"

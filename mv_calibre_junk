@@ -15,7 +15,11 @@ see() ( { set -x; } 2>/dev/null ; "$@" )
 # _calibre_junk subdir; higher level scripts are free to rm -rf this dir
 #
 
-mkdir -p _calibre_junk || die
+mkdir -p _calibre_junk || die "mkdir fialed"
 
 # https://stackoverflow.com/a/26349346  variant of  https://stackoverflow.com/a/8489394
-find . -type f \( -iname '*.azw*' -o -iname '*.mobi' \) -print0 | while IFS= read -r -d '' file; do if ebook-meta "$file" | grep -q '^Book Producer.\+calibre' ; then see mv -- "$file" _calibre_junk ; fi  ; done
+find . -type f \( -iname '*.azw*' -o -iname '*.mobi' \) -print0 | while IFS= read -r -d '' file; do
+   if ebook-meta "$file" | grep -q '^Book Producer.\+calibre' ; then
+      see mv -- "$file" _calibre_junk
+      fi
+   done
