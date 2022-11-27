@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+mvtovidres() {
+   [[ -f "$1" ]] || return
+   local res ; res="$(2>/dev/null ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$1")"  # https://stackoverflow.com/a/27831698
+   [[ "$res" ]] || return
+   # echo "$res"
+   case "$res" in  # give standard names to "TV resolutions"
+      1920x1080 ) res="@1080p" ;;
+      1280x720  ) res="@720p"  ;;
+      esac
+   # echo "$res"
+
+   local dn="./$res/"
+   # echo "$dn"
+   # echo "${1}"
+   # echo "${1#${dn@E}}"
+   [[ "${1#${dn@E}}" != "${1}" ]] && return  # if file already located in target dir $dn
+
+   [[ -d "$res" ]] || mkdir -- "$dn"
+   [[ -d "$res" ]] && see mv -- "$1" "$dn"
+   }
+
+
+# https://stackoverflow.com/a/26349346  variant of  https://stackoverflow.com/a/8489394
+find . -type f \( -iname '*.mp4' -o -iname '*.webm' -o -iname '*.flv' \) -print0 | while IFS= read -r -d '' file; do mvtovidres "$file" ; done
