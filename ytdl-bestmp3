@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+
+dieifnotinpath yt-dlp
+
+[[ "$1" ]] || die "missing URL param"
+
+#   yt-dlp -f 'ba' -x --audio-format mp3 "$1" -o '%(id)s.%(ext)s'  # <- filename=just the YT ID (which is actually NOT very useful for me as the default ofnm already contains this)
+see yt-dlp -f 'ba' -x --audio-format mp3 "$1"
