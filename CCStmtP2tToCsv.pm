@@ -212,14 +212,18 @@ sub _rdAddlTxns { my $self = shift; my ($ifnx, $ifx) = @_;
    if( -e $addltxnfnm ) {
       print "addltxnfnm $addltxnfnm\n\n";
       my $rdesc = '\w.*\w';
-      my $rentry = "($rdesc)".':\s+(\d{4}\-\d{2}\-\d{2})\s+(\d+)\s+'."($rdesc)";
+      my $rentry = "($rdesc)".':\s+(\d{4}\-\d{2}\-\d{2})\s+(\-?\d+)\s+'."($rdesc)";
       open my $ifh, '<', $addltxnfnm or die "abend cannot open $addltxnfnm for reading: $!\n";
       while( <$ifh> ) {
          chomp;
          if( m"\S" ) {
-            if( m"^(?:add:\s+)?$rentry" ) {
+            if(    m"^(?:add|charge):\s+$rentry" ) {
                my ($holder,$dt,$txcents,$desc) = ($1, $2, $3, $4);
                $self->add_txn( ['charge', $holder], $dt, $txcents, $desc, $holder, $src );
+               }
+            elsif( m"^credit:\s+$rentry" ) {
+               my ($holder,$dt,$txcents,$desc) = ($1, $2, $3, $4);
+               $self->add_txn( ['credit'], $dt, $txcents, $desc, $holder, $src );
                }
             elsif( m"^desc:\s+($rdesc)\s*\|\s*($rdesc)" ) {
                $self->_patch_txn_desc( 'charge', $1, $2 );
