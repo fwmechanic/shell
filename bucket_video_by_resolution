@@ -26,4 +26,5 @@ mvtovidres() {
 
 
 # https://stackoverflow.com/a/26349346  variant of  https://stackoverflow.com/a/8489394
-find . -type f \( -iname '*.mp4' -o -iname '*.webm' -o -iname '*.flv' \) -print0 | while IFS= read -r -d '' file; do mvtovidres "$file" ; done
+find . -maxdepth 1 -type f \( -iname '*.mp4' -o -iname '*.webm' -o -iname '*.flv' \) -print0 | while IFS= read -r -d '' file; do mvtovidres "$file" ; done
+# NONRECURSIVE!!!
