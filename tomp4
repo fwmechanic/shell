@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+optq=0 force=0 rmsrc=1
+
+convert_to_mp4() (  # NB: ffmpeg behavior DEPENDS ON the DEST FILE EXTENSION !!!
+   see "${FFMPEG:-"ffmpeg"}" -hide_banner -y  -i "$1" -c:v libx264 -crf 20 "$2"
+   )
+
+do1file() {
+   local fnm="$1"
+   if [[ ! -f "$fnm" ]]; then
+      ((optq)) || echo "$fnm does not name a file"
+      return 1
+   fi
+   local ext="${fnm##*.}"
+   if [[ "$ext" && "${ext^^}" == "MP4" ]]; then  # don't try to convert a MP4 to MP4
+      ((optq)) || echo "skipping: src is $ext '$fnm'"
+   else
+      local fpath="" ; [[ $fnm == */* ]] && fpath="${fnm%/*}/"  # ; echo "fpath=$fpath'"
+      local sanspath="${fnm##*/}"               # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+      local sansext="${sanspath%.*}"            # ; echo "sansext=$sansext'"
+      # app-logical variables: srcfnm tgtfnm
+      local srcfnm="$fnm"                       # ; echo "srcfnm=$srcfnm'"
+      local tgtfnm="$fpath$sansext.mp4"         # ; echo "tgtfnm=$tgtfnm'"
+      if ((!force)) && [[ -f "$tgtfnm" && "$tgtfnm" -nt "$srcfnm" ]]; then
+         ((optq)) || echo "skipping: tgtfnm exists '$tgtfnm'"
+      else
+         local logfnm="$fpath$sansext.log"      # ; echo "logfnm=$logfnm'"
+         if [[ -f "$logfnm" && "$logfnm" -nt "$srcfnm" ]]; then
+            ((optq)) || echo "skipping: logfile exists '$tgtfnm'"
+         else
+            echo "create: $tgtfnm"
+            if >"$logfnm" 2>&1 convert_to_mp4 "$srcfnm" "$tgtfnm"; then
+               # echo "log deleted"
+               rm -f "${logfnm:?}"
+               ((rmsrc)) && see rm -f "$srcfnm"
+               return 0
+            else
+               echo "FAILED: see '${logfnm}'"
+               rm -f "$tgtfnm"  # partial output only consumes disk space
+            fi
+         fi
+      fi
+   return 1
+   fi
+   }
+
+# parse options
+argerr() {  die "usage: $0 [-fqk] FILE..." ; }
+while getopts "fqkh" opt; do
+  case $opt in
+    f) force=1 ;;
+    q) optq=1  ;;
+    k) rmsrc=0 ;;  # keep
+    h) argerr;;
+    \?) argerr;;
+  esac
+done
+shift "$((OPTIND-1))"  # shift so that $@, $1, etc. refer to the non-option arguments
+
+ix=0
+for fnm in "$@"; do
+   if do1file "$fnm"; then
+      ((ix++))
+   fi
+done
+if (( ix > 0 )); then
+   echo "$ix done at $(date +'%y%m%dT%H%M')"
+fi
