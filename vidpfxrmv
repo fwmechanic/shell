@@ -9,10 +9,14 @@
 #
 # usage: vidpfxrmv fname mm:ss
 
+
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 
 [[ "$2" ]] || die "missing mm:ss param"
 [[ -f "$1" ]] || die "$1 is not a file"
+
+pffp --if="$1" --tm="$2" rp  # new implementation
+exit
 
 ext="${1##*.}"  # ffmpeg behavior DEPENDS ON the DEST FILE EXTENSION you provide, so derive from input fnm
 
