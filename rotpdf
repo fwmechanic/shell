@@ -28,6 +28,9 @@ do1file() (
    dorot "$bakfnm" "$destfnm"
    )
 
+# EX: rotate *select* pages in pdf
+# qpdf src.pdf --rotate=+90:19-21,24-30,43-49 -- out.pdf
+
 dorot() ( qpdf --rotate="$rotdeg" "$1" "$2" )
 
 help() { die "need rotmode file [file...] where rotmode is one of cw ccw 180" ; }

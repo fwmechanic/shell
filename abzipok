@@ -1,10 +1,22 @@
 #!/usr/bin/env bash
+#
+# purpose: my audiobook zip files are constructed in a specific way
+#   (see %~dp0/zf): they contain one directory, bearing the same name as the
+#   containing zip file, so that when decompressed, the user sees a single new
+#   dir bearing the same name as the source zipfile.
+#
+# This program, for each file names on the command line, compares the name of
+# the file with the name of the only top-level dir within the file, and if the
+# two names do not match, re-creates the zip file with the single dir within it
+# renamed to match file zip file's name.
+#
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" )
 dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
 
 dieifnotinpath 7z
+dieifnotinpath zf
 
 dirs_in_archive() {
    7z l "$1" | perl -lne '/^\d{4}\-\d{2}\-\d{2} \d{2}:\d{2}:\d{2}\Q D....\E\s+0\s+0\s+(\S.*)$/ && print "$1"'

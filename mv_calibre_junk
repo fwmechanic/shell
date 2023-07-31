@@ -15,11 +15,27 @@ see() ( { set -x; } 2>/dev/null ; "$@" )
 # _calibre_junk subdir; higher level scripts are free to rm -rf this dir
 #
 
+calibre_produced() { ebook-meta "$1" | grep -q '^Book Producer.\+calibre' ; }
+
 mkdir -p _calibre_junk || die "mkdir fialed"
 
 # https://stackoverflow.com/a/26349346  variant of  https://stackoverflow.com/a/8489394
-find . -type f \( -iname '*.azw*' -o -iname '*.mobi' \) -print0 | while IFS= read -r -d '' file; do
-   if ebook-meta "$file" | grep -q '^Book Producer.\+calibre' ; then
-      see mv -- "$file" _calibre_junk
-      fi
-   done
+azwmobi() (
+   find . -maxdepth 1 -type f \( -iname '*.azw*' -o -iname '*.mobi' \) -print0 | while IFS= read -r -d '' file; do
+      if calibre_produced "$file" ; then
+         see mv -- "$file" _calibre_junk
+         fi
+      done
+   )
+
+pdf() (  # this accomplishes nothing because calibre's `ebook-meta` does not display "Book Producer ..." metadata for PDF files (though calibre WRITES it to produced PDFs!)
+   find . -maxdepth 1 -type f -name '*.medtype.pdf' -prune -o -name '*.pdf' -print0 | while IFS= read -r -d '' file; do
+      mt="${file/%pdf/medtype.pdf}"
+      #                 && { echo "mt=$mt" ; true ; }
+      if [[ -f "$mt" ]]                               && calibre_produced "$file" ; then
+         see mv -- "$file" _calibre_junk
+         fi
+      done
+   )
+
+"${1:-azwmobi}"  # run scan

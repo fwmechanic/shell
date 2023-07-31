@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
-report1 "$@" $(find . -mindepth 2 -maxdepth 2 -type f -iname '#MONTHLY*.txt')
+report1 "$@" $(find . -mindepth 2 -maxdepth 3 -type f -iname '#MONTHLY*.txt')
