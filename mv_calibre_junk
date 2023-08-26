@@ -15,27 +15,32 @@ see() ( { set -x; } 2>/dev/null ; "$@" )
 # _calibre_junk subdir; higher level scripts are free to rm -rf this dir
 #
 
-calibre_produced() { ebook-meta "$1" | grep -q '^Book Producer.\+calibre' ; }
+fn_exists() { declare -F "$1" > /dev/null; }  # https://stackoverflow.com/a/85932
 
-mkdir -p _calibre_junk || die "mkdir fialed"
+calibre_produced() {  ebook-meta "$1" | grep -q '^Book Producer.\+calibre' ; }  # `ebook-meta` does not display "Book Producer ..." metadata for PDF files (though calibre WRITES it to produced PDFs!)
+calibre_produced_pdf() { pdfinfo "$1" | grep -qP '^Producer:\s+calibre\s'  ; }
+
+mkdir -p _calibre_junk || die "mkdir failed"
 
 # https://stackoverflow.com/a/26349346  variant of  https://stackoverflow.com/a/8489394
 azwmobi() (
-   find . -maxdepth 1 -type f \( -iname '*.azw*' -o -iname '*.mobi' \) -print0 | while IFS= read -r -d '' file; do
-      if calibre_produced "$file" ; then
-         see mv -- "$file" _calibre_junk
+   find . -maxdepth 1 -type f \( -iname '*.azw*' -o -iname '*.mobi' \) -print0 | while IFS= read -r -d '' fnm; do
+      if calibre_produced "$fnm" ; then
+         see mv -- "$fnm" _calibre_junk
          fi
       done
    )
 
-pdf() (  # this accomplishes nothing because calibre's `ebook-meta` does not display "Book Producer ..." metadata for PDF files (though calibre WRITES it to produced PDFs!)
-   find . -maxdepth 1 -type f -name '*.medtype.pdf' -prune -o -name '*.pdf' -print0 | while IFS= read -r -d '' file; do
-      mt="${file/%pdf/medtype.pdf}"
-      #                 && { echo "mt=$mt" ; true ; }
-      if [[ -f "$mt" ]]                               && calibre_produced "$file" ; then
-         see mv -- "$file" _calibre_junk
+all() (  # note that we exclude .medtype.pdf files from consideration
+   find . -maxdepth 1 -type f \( -iname '*.azw*' -o -iname '*.mobi' -o -iname '*.pdf' \) ! -iname '*.medtype.pdf' -print0 | while IFS= read -r -d '' fnm; do
+      ext="${fnm##*.}"
+      cpfx=calibre_produced ; if fn_exists "${cpfx}_$ext" ; then cpfx="${cpfx}_$ext" ; fi
+    # echo "$ext $cpfx  $fnm"
+    # if mt="${fnm/%pdf/medtype.pdf}" && [[ -f "$mt" ]] && "$cpfx" "$fnm" ; then
+      if                   "$cpfx" "$fnm" ; then
+         see mv -- "$fnm" _calibre_junk
          fi
       done
    )
 
-"${1:-azwmobi}"  # run scan
+"${1:-all}"  # run scan
