@@ -32,9 +32,12 @@ normvol_to_mp3() (
 
    outfnm="${sansext}_normvol.$ext"
    [[ -f "$outfnm" && "$outfnm" -nt "$1" ]] && die "exists $outfnm"
-   dbadj="$(read_mean_volume_neg_db "$1")" || die "read_mean_volume_neg_db failed on $1"
+   meanvol="$(read_mean_volume_neg_db "$1")" || die "read_mean_volume_neg_db failed on $1"
+   dbadj=$(( meanvol / 2 ))
    printf "+%3ddB %s\n" "$dbadj" "$outfnm"
-   ffmpeg -i "$1" -y -f "$ext" -q:a 0 -af "volume=${dbadj}dB" "$outfnm" 2> /dev/null || die "normvol failed on $1"
+   if (( dbadj > 0 )); then
+      ffmpeg -i "$1" -y -f "$ext" -q:a 0 -af "volume=${dbadj}dB" "$outfnm" 2> /dev/null || die "normvol failed on $1"
+   fi
    )
 
 for fnm in "$@"; do
