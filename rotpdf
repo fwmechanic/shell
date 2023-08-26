@@ -31,6 +31,9 @@ do1file() (
 # EX: rotate *select* pages in pdf
 # qpdf src.pdf --rotate=+90:19-21,24-30,43-49 -- out.pdf
 
+# EX: extract page range from in.pdf into out.pdf (note the '.')  https://askubuntu.com/a/672001
+# qpdf in.pdf --pages . 1-16 -- out.pdf
+
 dorot() ( qpdf --rotate="$rotdeg" "$1" "$2" )
 
 help() { die "need rotmode file [file...] where rotmode is one of cw ccw 180" ; }
