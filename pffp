@@ -15,6 +15,8 @@ use Getopt::Long;
 sub max ($$) { $_[$_[0] < $_[1]] }  # https://www.perlmonks.org/?node_id=406885
 sub min ($$) { $_[$_[0] > $_[1]] }
 
+my ($ifnm,$ofnm,$tm,$verb,$tms,$fext);
+
 sub extof { my($fnm)=@_;
    my($ext) = $fnm =~ m|(\.[^.]+)$|;
    return $ext;
@@ -31,6 +33,23 @@ sub dhms_to_secs { my ($stm) = @_;
    return $rv;
    }
 
+sub chkExtProc {
+   die "close gave NZ \$! $!\n" unless $! == 0;
+   if ( $? == -1 ) {
+      print "Command failed to execute: $!\n";
+      return -3;
+      }
+   elsif ( $? & 127 ) {
+      printf "The child died with signal %d, %s a coredump\n", ( $? & 127 ), ( $? & 128 ) ? 'with' : 'without';
+      return -2;
+      }
+   else {
+      my $xc = $? >> 8;
+      printf "child exited with value %d\n", $xc if $xc != 0;
+      return $xc;
+      }
+   }
+
 sub system_silent {
    my $cli = join( ' ', @_ ) . ' 2>&1';
    print 'system_silent: ', $cli, "\n";
@@ -38,36 +57,37 @@ sub system_silent {
    my $logfnm = 'ss.log';
    {
    open my $ofh, '>', $logfnm or die "failed opening $logfnm for writing: $!\n";
-   while( <$ifh> ) {
-      print $ofh $_;
-      }
+   print $ofh $_ while <$ifh>;
+   close( $ifh );  # set $? for chkExtProc
+   die "command failed\n" unless chkExtProc() == 0;
    }
    unlink $logfnm;
    }
 
 sub vidclip { my ($ifnm, $ofnm, $t0, $t1) = @_;
-   my @cli = ( 'ffmpeg', '-hide_banner', '-y', '-ss', $t0, '-i', $ifnm, '-to', $t1, '-c', 'copy', $ofnm );
+   my @cli = ( 'ffmpeg', '-hide_banner', '-y', '-ss', $t0, '-i', "'$ifnm'", '-to', $t1, '-c', 'copy', $ofnm );
    system_silent( @cli );
    }
 
 sub copy { my ($ifnm, $ofnm) = @_;
-   my @cli = ( 'ffmpeg', '-hide_banner', '-y', '-i', $ifnm, '-c', 'copy', $ofnm );
+   my @cli = ( 'ffmpeg', '-hide_banner', '-y', '-i', "'$ifnm'", '-c', 'copy', $ofnm );
    system_silent( @cli );
    }
 
 sub rmvpfx { my ($ifnm, $ofnm, $tms) = @_;  # "${FFMPEG:-"ffmpeg"}" -hide_banner -y -ss "$2" -i "$1" -c copy "out.$ext"
-   my @cli = ( 'ffmpeg', '-hide_banner', '-y', '-ss', $tms, '-i', $ifnm,              '-c', 'copy', $ofnm );
+   my @cli = ( 'ffmpeg', '-hide_banner', '-y', '-ss', $tms, '-i', "'$ifnm'",              '-c', 'copy', $ofnm );
    system_silent( @cli );
    }
 
 sub rmvsfx { my ($ifnm, $ofnm, $tms) = @_;  # ffmpeg -hide_banner -y -i "$1" -c copy -to "$2" "out.$ext"
-   my @cli = ( 'ffmpeg', '-hide_banner', '-y', '-i', $ifnm, '-to', $tms, '-c', 'copy', $ofnm );
+   my @cli = ( 'ffmpeg', '-hide_banner', '-y', '-i', "'$ifnm'", '-to', $tms, '-c', 'copy', $ofnm );
    system_silent( @cli );
    }
 
 sub ffp_vidfprint { my ($fnm) = @_;
-   print "ffp_vidfprint $fnm\n";
-   open my $ifh, '-|', 'ffprobe -v error -hide_banner -show_frames -print_format compact "'.$fnm.'" 2>&1' or die "cannot pipe from ffprobe: $!";
+   print "ffp_vidfprint $fnm\n" if $verb;
+   my $cmd = 'ffprobe -v error -hide_banner -show_frames -print_format compact "'.$fnm.'" 2>&1' or die "cannot pipe from ffprobe: $!";
+   open my $ifh, '-|', $cmd or die "cannot pipe from ffprobe: $!";
    my $first=1; my $acnt=0; my $vcnt=0; my $ts=0.0; my $seen_key = 0;
    while( <$ifh> ) {
       next unless /^frame\|/;
@@ -88,28 +108,35 @@ sub ffp_vidfprint { my ($fnm) = @_;
    }
 
 sub vid_keyframe_before_rd_intvl { my ($fnm,$t0,$tms,$t1) = @_;  # https://stackoverflow.com/a/14011638
-   print "vid_keyframe_before_rd_intvl $fnm,$t0,$tms,$t1\n";     # https://ffmpeg.org/ffprobe.html read_intervals
-   open my $ifh, '-|', 'ffprobe -v error -hide_banner -show_frames -read_intervals '."$t0\%$t1".' -select_streams v:0 -print_format compact "'.$fnm.'" 2>&1' or die "cannot pipe from ffprobe: $!";
+   print "vid_keyframe_before_rd_intvl+ $fnm,$t0,$tms,$t1\n";     # https://ffmpeg.org/ffprobe.html read_intervals
+   my $cmd = 'ffprobe -v error -hide_banner -read_intervals '."$t0\%$t1".' -select_streams v:0 -skip_frame nokey -show_entries frame=pts_time,key_frame -print_format compact "'.$fnm.'" 2>&1';
+   print "vid_keyframe_before_rd_intvl: cmd=",$cmd,"\n" if $verb;
+   my @keyframes = qx( $cmd );
+   die "command failed\n" unless chkExtProc() == 0;
    my $best;
-   while( <$ifh> ) {
-      next unless /^frame\|/ && /\|media_type=video\|/;
-      if( my($is_keyframe,$ptstime) = /\|key_frame=(\d)\|pts=\d+\|pts_time=(\d+\.\d+)\|/ ) {
-         if( $is_keyframe ) {
-            printf "%12.6f\n", $ptstime;
-            if( $ptstime > $tms ) {  # choose between last kf before $tms (current $best) and first kf after $tms
-               $best = $best && $tms - $best < $ptstime - $tms ? $best : $ptstime;
-               last;
-               }
-            $best = $ptstime;
+   for( @keyframes ) { #   # frame|key_frame=1|pts_time=593.926667  # key_frame is redundant since always 1 due to `-skip_frame nokey`
+      if( my($ptstime) = /\|pts_time=(\d+\.\d+)/ ) {
+         print;
+       # printf "%12.6f\n", $ptstime;
+         if( $ptstime > $tms ) {  # choose between last kf before $tms (current $best) and first kf after $tms
+            $best = $best && $tms - $best < $ptstime - $tms ? $best : $ptstime;
+            last;
             }
+         $best = $ptstime;
          }
       }
-   print "vid_keyframe_before_rd_intvl = ",$best?$best:"none","\n";
+   die unless defined $best;
+   if( defined $best && $best < $t0 || $best > $t1 ) {
+      $best = undef;
+      }
+   else {
+      print "vid_keyframe_before_rd_intvl= $best\n" if $verb;
+      }
    return $best;
    }
 
 sub rp_before { my($ifnm, $ofnm, $tms) = @_;
-   for( my $win=2; $win<60; $win *= 2 ) {
+   for( my $win=5; $win<90; $win *= 2 ) {
       my $ts = vid_keyframe_before_rd_intvl($ifnm, max( $tms - $win, 0 ), $tms, $tms + $win);
       if( $ts ) {
          rmvpfx($ifnm,$ofnm,$ts);
@@ -123,8 +150,7 @@ sub rp_before { my($ifnm, $ofnm, $tms) = @_;
 # --if=input_filename
 # --of=output_filename (optional; dflt="out.extof(--if)")
 # --tm=time
-my ($ifnm,$ofnm,$tm,$tms,$fext);
-my %runtbl = (
+my %steptbl = (
    cp   => sub { copy($ifnm,$ofnm); },
    rp   => sub { rp_before($ifnm,$ofnm,$tms); },
    rs   => sub { rmvsfx   ($ifnm,$ofnm,$tms); },
@@ -135,16 +161,21 @@ my %runtbl = (
  # popi => sub { $ifnm = $ofnm; },
    );
 
-sub run { my($arg) = @_;
-   $ifnm or die "--if not set when run=$arg\n";
+my $steps = 0;
+sub step { my($arg) = @_; ++$steps;
+   $ifnm or die "--if not set when step[$steps]=$arg\n";
    $fext = extof( $ifnm ); # includes leading '.'
    $ofnm //= "out";
    $ofnm .= $fext unless $ofnm =~ m|\Q$fext\E$|;
    $tm //= 0;
    $tms = dhms_to_secs($tm);
-   print "ifnm=$ifnm, fext=$fext, ofnm=$ofnm, tms = $tms\n";
-   my $sub = $runtbl{$arg} or die "unsupported run=$arg\n";
+   print "step[$steps]: $arg w/ifnm=$ifnm, fext=$fext, ofnm=$ofnm, tms = $tms\n";
+   my $sub = $steptbl{$arg} or die "unsupported step=$arg\n";
    $sub->( $arg );
    }
 
-GetOptions( 'if=s' => \$ifnm, 'of=s' => \$ofnm, 'tm=s' => \$tm, '<>' => \&run );
+GetOptions( 'if=s' => \$ifnm, 'of=s' => \$ofnm, 'tm=s' => \$tm, 'verb=i' => \$verb, '<>' => \&step );
+
+if( $steps == 0 ) {
+   print "no steps specified, use ", join( ' ', sort keys %steptbl ), "\n";
+   }
