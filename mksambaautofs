@@ -1,0 +1,16 @@
+#!/bin/sh
+[ -z $1 ] && echo "please add samba's domain name or IP like so: \"./mkautofssmbconf.sh nas-name.local\"" && exit 1
+VARREMOTESMB=$1
+VARUSER=${USER}
+VARUID=$(grep ${VARUSER} /etc/passwd | cut -d ':' -f3)
+VARGID=$(grep ${VARUSER} /etc/passwd | cut -d ':' -f4)
+VARTMPCFG=$(mktemp /tmp/autofstmpconf.XXXXX)
+
+chmod 644 ${VARTMPCFG}
+
+for VARFLD in $(smbclient -A /home/${VARUSER}/.smb.credentials -gL ${VARREMOTESMB} | grep Disk | cut -d '|' -f2) ; do
+    echo /mnt/remote/${VARFLD} -fstype=cifs,uid=${VARUID},gid=${VARGID},credentials=/home/${VARUSER}/.smb.credentials,rw ://${VARREMOTESMB}/${VARFLD} >> ${VARTMPCFG}
+    [ ! -d /mnt/remote/${VARFLD} ] && sudo mkdir -p /mnt/remote/${VARFLD}
+done;
+sudo /bin/sh -c '[ -f /etc/auto.smbmedia ] && rm -f /etc/auto.smbmedia'
+sudo mv ${VARTMPCFG} /etc/auto.smbmedia && sudo /bin/sh -c 'chown root:root /etc/auto.smbmedia && systemctl restart autofs'
