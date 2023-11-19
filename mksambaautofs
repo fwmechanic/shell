@@ -12,5 +12,12 @@ for VARFLD in $(smbclient -A /home/${VARUSER}/.smb.credentials -gL ${VARREMOTESM
     echo /mnt/remote/${VARFLD} -fstype=cifs,uid=${VARUID},gid=${VARGID},credentials=/home/${VARUSER}/.smb.credentials,rw ://${VARREMOTESMB}/${VARFLD} >> ${VARTMPCFG}
     [ ! -d /mnt/remote/${VARFLD} ] && sudo mkdir -p /mnt/remote/${VARFLD}
 done;
-sudo /bin/sh -c '[ -f /etc/auto.smbmedia ] && rm -f /etc/auto.smbmedia'
-sudo mv ${VARTMPCFG} /etc/auto.smbmedia && sudo /bin/sh -c 'chown root:root /etc/auto.smbmedia && systemctl restart autofs'
+VARNUMDISKS="$(<"${VARTMPCFG}" wc -l)"
+echo "$VARNUMDISKS Disk shares found at ${VARREMOTESMB}"
+if [ $VARNUMDISKS -eq 0 ] ; then
+   rm -f ${VARTMPCFG}
+   echo "no changes made"
+else
+   sudo /bin/sh -c '[ -f /etc/auto.smbmedia ] && rm -f /etc/auto.smbmedia'
+   sudo mv ${VARTMPCFG} /etc/auto.smbmedia && sudo /bin/sh -c 'chown root:root /etc/auto.smbmedia && systemctl restart autofs'
+fi
