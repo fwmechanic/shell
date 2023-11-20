@@ -1,23 +1,50 @@
-#!/bin/sh
-[ -z $1 ] && echo "please add samba's domain name or IP like so: \"./mkautofssmbconf.sh nas-name.local\"" && exit 1
-VARREMOTESMB=$1
-VARUSER=${USER}
-VARUID=$(grep ${VARUSER} /etc/passwd | cut -d ':' -f3)
-VARGID=$(grep ${VARUSER} /etc/passwd | cut -d ':' -f4)
-VARTMPCFG=$(mktemp /tmp/autofstmpconf.XXXXX)
+#!/bin/bash
 
-chmod 644 ${VARTMPCFG}
+# source: https://forum.level1techs.com/t/easy-to-follow-samba-autofs-mount/178658
 
-for VARFLD in $(smbclient -A /home/${VARUSER}/.smb.credentials -gL ${VARREMOTESMB} | grep Disk | cut -d '|' -f2) ; do
-    echo /mnt/remote/${VARFLD} -fstype=cifs,uid=${VARUID},gid=${VARGID},credentials=/home/${VARUSER}/.smb.credentials,rw ://${VARREMOTESMB}/${VARFLD} >> ${VARTMPCFG}
-    [ ! -d /mnt/remote/${VARFLD} ] && sudo mkdir -p /mnt/remote/${VARFLD}
-done;
-VARNUMDISKS="$(<"${VARTMPCFG}" wc -l)"
-echo "$VARNUMDISKS Disk shares found at ${VARREMOTESMB}"
-if [ $VARNUMDISKS -eq 0 ] ; then
-   rm -f ${VARTMPCFG}
-   echo "no changes made"
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+inpath() { command -v "$1" >/dev/null ; }
+dieifnotinpath() { inpath "$1" || die "$1 not in PATH"; }
+chkpkg() { dpkg -l "$1" >/dev/null || die "pkg $1 not installed" ; }
+
+inpath systemctl || die "this script written for systemctl-/systemd-based OS"
+chkpkg autofs
+chkpkg cifs-utils
+dieifnotinpath smbclient
+
+if [ "$1" ] ; then
+   smb_server="$1"
 else
-   sudo /bin/sh -c '[ -f /etc/auto.smbmedia ] && rm -f /etc/auto.smbmedia'
-   sudo mv ${VARTMPCFG} /etc/auto.smbmedia && sudo /bin/sh -c 'chown root:root /etc/auto.smbmedia && systemctl restart autofs'
+   echo "optional samba domain name or server IP parameter omitted, trying SSID-based lookup"
+   if inpath iwgetid && echo -n "SSID=" && ssid="$(iwgetid --raw)" && echo -n "$ssid" && lupfn="/home/$USER/.smbserver.for.ssid.$ssid" && echo -n ", lupfn=$lupfn" && read -r smb_server<"$lupfn" ; then
+      echo ", '$smb_server'"
+   else
+      die ", SSID-based lookup failed, giving up"
+   fi
+fi
+
+# sample content for smbclient credential file:
+#-------------------------
+# username=smbusername
+# password=smbpassword
+smbclient_creds_fn="/home/$USER/.smb.credentials.$smb_server" ; test -f "$smbclient_creds_fn" || die "you haven't created $smbclient_creds_fn"
+uid="$(grep -F "$USER" /etc/passwd | cut -d ':' -f3)"
+gid="$(grep -F "$USER" /etc/passwd | cut -d ':' -f4)"
+srcfn="$(mktemp /tmp/autofstmpconf.XXXXX)" ; chmod 644 "$srcfn"
+
+for shnm in $(smbclient -A "$smbclient_creds_fn" -gL "$smb_server" | grep -F Disk | cut -d '|' -f2) ; do
+    md="/mnt/remote/$shnm"
+    echo "$md" -fstype=cifs,uid="$uid",gid="$gid",credentials="$smbclient_creds_fn",rw ://"$smb_server"/"$shnm" >> "$srcfn"
+    test -d "$md" || sudo mkdir -p "$md"
+done
+num_smb_disks="$(<"$srcfn" wc -l)"
+echo "$num_smb_disks SMB disk shares found on $smb_server"
+# since `systemctl restart autofs` can be disruptive and time-consuming, avoid unless config has changed
+destfn="/etc/auto.smbmedia"
+if sudo /bin/sh -c "cmp -s '$destfn' '$srcfn'" ; then
+   rm -f "$srcfn"
+   echo "$destfn would not change, doing nothing"
+else
+   sudo /bin/sh -c "rm -f '$destfn' ; mv '$srcfn' '$destfn' && chown root:root '$destfn' && echo 'restarting autofs service' && systemctl restart autofs"
 fi
