@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+arg=()
+for nm in "$@"; do
+   cpn="$(cygpath "$nm")"
+   echo "$nm  ->  $cpn"
+   arg+=( "$cpn" )
+done
+{ set -x; } 2>/dev/null
+"${arg[@]}"
