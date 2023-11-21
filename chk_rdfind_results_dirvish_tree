@@ -1,0 +1,71 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+# requirements: must be run with specific pwd
+
+use Cwd;
+my $cwd = getcwd;
+{
+my $dconf = "dirvish/default.conf";
+-f "$cwd/$dconf" or die "cwd $cwd does not contain file $dconf\n";
+}
+
+my @known_trees;
+
+sub determine_trees {
+   opendir(my $dh, $cwd) || die "Can't open $cwd: $!";
+   while (readdir $dh) {
+      my $td = "$cwd/$_/tree";
+      push @known_trees, $td if -d $_ && -d $td;
+      }
+   closedir $dh;
+   @known_trees = sort @known_trees;
+   print "$_\n" for ( @known_trees );
+   }
+
+sub chk_past_trees { my ($inTreeNm,$treednm) = @_;
+   determine_trees() unless scalar @known_trees;
+   for my $dnm ( @known_trees ) {
+      last if $treednm && $dnm gt $treednm;
+      my $pf = "$dnm/$inTreeNm";
+      # print "   $pf\n";
+      my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size) = stat($pf);
+      if( defined $dev ) {
+         printf( "   <$dev,$ino> %04o %3d %8d %s\n", $mode & 07777,$nlink,$size,$pf );
+         }
+      }
+   }
+
+sub scan_rdfind_results { my($tnm) = @_;
+   my $ifnm= "$tnm/rdfind_results.txt";
+   open my $ifh, '<', $ifnm or die "abend cannot open $ifnm for reading: $!\n";
+   my ($prevnm,$prevint,$prev_pyld);
+   while( <$ifh> ) {
+      chomp;
+      my ($duptype    , $id    ,  $depth,$size,$device,$inode,$priority,$name) = $_ =~
+      #   |             |         |      |      |      |      |         |
+      m{^(DUPTYPE_\S+)\s(\-?\d+)\s(\d+)\s(\d+)\s(\d+)\s(\d+)\s(\d+)\s(\S.*)$};
+      if( $name ) {
+         my ($intree) = $name =~ m{/tree/(.+)};
+         my $pyld = "<$device,$inode>";
+         if( $duptype eq 'DUPTYPE_FIRST_OCCURRENCE' ) {
+            ($prevnm,$prevint,$prev_pyld) = ($name,$intree,$pyld);
+            }
+         else {
+            if( $prevint eq $intree ) { # name within tree has not changed?  Rsync should have already created a link.
+               print "\nMISSING_LINK\n$prev_pyld $prevnm\n$pyld $name\n"; # it's possible that the new file is linked to another file
+               chk_past_trees( $intree );
+               }
+            else {
+               print "\nRENAME\n$prevint\n$intree\n"
+               }
+            }
+         }
+      }
+   }
+
+for my $tnm ( @ARGV ) {
+   scan_rdfind_results( $tnm );
+   }
