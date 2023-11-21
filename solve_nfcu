@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 
 #
 # usage: ./solve_nfcu name.CSV
@@ -106,4 +106,9 @@ for my $ymd ( sort keys %depsums ) {
          , "checks:",join ' ',@{$deps{$ymd}},"\n";
    $sum += $add;
    }
-print "calculated balance matches supplied Available Balance: result accurate\n" if $sum == $availbal;
+if( $sum == $availbal ) {
+   print "calculated balance matches supplied Available Balance: result accurate\n"
+   }
+else {
+   printf "calculated balance != Available Balance: %s != %s: diff %s\n", $c2dcp->($sum) , $c2dcp->($availbal), $c2dcp->($sum - $availbal)
+   }
