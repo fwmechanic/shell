@@ -14,11 +14,18 @@ see() ( { set -x; } 2>/dev/null ; "$@" )
 # Rather than delete such files, this script moves these files to a
 # _calibre_junk subdir; higher level scripts are free to rm -rf this dir
 #
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+dieifnotinpath pdfinfo
+dieifnotinpath find_calibre_binary
+
+ebookmeta="$(find_calibre_binary ebook-meta)" || die
 
 fn_exists() { declare -F "$1" > /dev/null; }  # https://stackoverflow.com/a/85932
 
-calibre_produced() {  ebook-meta "$1" | grep -q '^Book Producer.\+calibre' ; }  # `ebook-meta` does not display "Book Producer ..." metadata for PDF files (though calibre WRITES it to produced PDFs!)
-calibre_produced_pdf() { pdfinfo "$1" | grep -qP '^Producer:\s+calibre\s'  ; }
+calibre_produced() { "$ebookmeta" "$1" | grep -q '^Book Producer.\+calibre' ; }  # `ebook-meta` does not display "Book Producer ..." metadata for PDF files (though calibre WRITES it to produced PDFs!)
+calibre_produced_pdf() { pdfinfo  "$1" | grep -qP '^Producer:\s+calibre\s'  ; }
 
 mkdir -p _calibre_junk || die "mkdir failed"
 

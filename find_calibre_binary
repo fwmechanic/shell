@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# calibre binaries move around!
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+ecxbnm="$1" ; [[ "$ecxbnm" ]] || die "missin calibre binary name param"
+if inpath="$(command -v "$ecxbnm")"; then
+   echo "$inpath"
+   exit 0
+fi
+places="path"
+ck() {
+   ecexe="$(cygpath -u "$1/$ecxbnm.exe")"
+   if [[ -x "$ecexe" ]]; then
+      echo "$ecexe"
+      return 0
+   fi
+   places="$places, $1"
+   }
+ck "$PROGRAMFILES/Calibre2" ||  # 20240122 choco installs calibre 7.x not in $path; so ... hard-code!
+ck "$HOME/my/bin/Calibre Portable/Calibre" ||
+ck "$LOCALAPPDATA/Programs/Calibre Portable/Calibre" ||
+die "$ecxbnm is not in $places"
