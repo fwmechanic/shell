@@ -1,33 +1,19 @@
 #!/usr/bin/env bash
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
-see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+see() ( { set -x; } 2>/dev/null ; "$@" )
 
 optq=0 force=0
 
-find_ec_binary() (
-   ecxbnm="ebook-convert"
-   if inpath="$(command -v "$ecxbnm")"; then
-      echo "$inpath"
-      return 0
-   fi
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+dieifnotinpath find_calibre_binary
 
-   declare -a calibre_locns=( "$HOME/my/bin"  "$LOCALAPPDATA/Programs" )
-   for dnm in "${calibre_locns[@]}"; do
-      ecexe="$(cygpath -u "$dnm/Calibre Portable/Calibre/$ecxbnm.exe")"
-      if [[ -x "$ecexe" ]]; then
-         echo "$ecexe"
-         return 0
-      fi
-   done
-   die "$ecxbnm is not in PATH or ${calibre_locns[*]}"
-   )
-ecbin="$(find_ec_binary)"
+ecbin="$(find_calibre_binary ebook-convert)" || die
+
 # echo "ecbin=$ecbin"
 ecbin_version_2line="$("$ecbin" --version)" ; read -r ecbin_version <<<"$ecbin_version_2line"
 [[ "$ecbin_version" ]] || die
 # echo "ecbin_version=$ecbin_version"
-
 
 convert_to_pdf() (
    # https://manual.calibre-ebook.com/generated/en/ebook-convert.html#pdf-output-options
