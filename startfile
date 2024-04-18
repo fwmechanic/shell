@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+# https://superuser.com/a/38989  https://stackoverflow.com/a/18434831
+case "$OSTYPE" in
+  darwin*)  open "$@" ;;
+  linux*)   xdg-open "$@" ;;
+  msys*)    start "$@" ;;  # Windows
+  cygwin*)  start "$@" ;;  # Windows
+  *)        echo "unsupported: $OSTYPE" ;  exit 1 ;;
+esac

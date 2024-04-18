@@ -20,4 +20,4 @@ fetchremote="${fetchremote/ (push)/}"                             ; echo "fetchr
 fetchremote="${fetchremote/git@github.com:/https://github.com/}"  ; echo "fetchremote=$fetchremote"
 # origin  git@github.com:fwmechanic/shell.git (push)
 # start 'https://github.com/fwmechanic/shell.git'
-start "$fetchremote"
+startfile "$fetchremote"
