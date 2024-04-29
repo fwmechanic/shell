@@ -5,7 +5,7 @@
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 
-ecxbnm="$1" ; [[ "$ecxbnm" ]] || die "missin calibre binary name param"
+ecxbnm="$1" ; [[ "$ecxbnm" ]] || die "missing calibre binary name param"
 if inpath="$(command -v "$ecxbnm")"; then
    echo "$inpath"
    exit 0
