@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+do1file() (
+   fnm="$1"  # ; echo "fnm=$1'"
+   [[ -f "$fnm" ]] || die "$fnm is not a file"
+
+   # break down $fnm:
+   fpath=""
+   if [[ $fnm == */* ]]; then
+      fpath="${fnm%/*}/"
+      # cd "$fpath" || die "cd to $fpath failed"  # no need to cd in this case as we are renaming "$1" to "$fpath..."
+   fi # ; echo "fpath=$fpath'"
+
+   sanspath="${1##*/}"        # ; echo "sanspath=$sanspath'"    # https://stackoverflow.com/a/965069
+   ext="${sanspath##*.}"      # ; echo "ext=$ext'"
+   # sansext="${sanspath%.*}"   # ; echo "sansext=$sansext'"
+
+   dt="$(date -r "$1" +'%Y%m%d_%H%M%S')"
+ # see mv "$1" "$fpath$dt.$ext"
+   echo "mv '$1' '$fpath$dt.$ext'"
+   )
+
+# https://stackoverflow.com/a/26349346  variant of  https://stackoverflow.com/a/8489394
+find . -maxdepth 1 -type f -print0 | while IFS= read -r -d '' file; do do1file "$file" ; done
+# NONRECURSIVE!!!
