@@ -10,8 +10,8 @@ mkdir_or_die() {  # if already exists, do nothing (existing contents not disturb
    [[ -d "$1" ]] || mkdir "$1" || die "could not mkdir $1"
    [[ -d "$1" ]] ||               die "mkdir $1 failed"
    }
-zfdin="./_consumed" ; mkdir_or_die "$zfdin"     # when making a bulk run, it's handy to be able to verify outcome by comparing the # of
-zfdout="./_output"  ; mkdir_or_die "$zfdout"    # in vs out files (empty before starting! TODO: add a common date-code prefix to $zfdin & $zfdout)
+zf_saved="./_consumed" ; mkdir_or_die "$zf_saved"     # when making a bulk run, it's handy to be able to verify outcome by comparing the # of
+zfdout="./_output"  ; mkdir_or_die "$zfdout"    # in vs out files (empty before starting! TODO: add a common date-code prefix to $zf_saved & $zfdout)
 
 do1file() (
    fnm="$1"  # ; echo "fnm=$1'"
@@ -28,24 +28,19 @@ do1file() (
    ext="${sanspath##*.}"       ; echo "ext=$ext'"
    sansext="${sanspath%.*}"    ; echo "sansext=$sansext'"
 
+   zf1if="$1"         # zf-do1file input file
+   z1dind="$sansext"  # z1d input: a directory
+   z1d_of="$z1dind.zip" z1d_od="z1d_$z1dind"  # on success, z1d creates $z1d_of && renames $z1dind to $z1d_od
+   [[ -d "$z1dind" ]] && die "zf-do1file: z1d input-dir already exists"
+
    case "$ext" in
-      mp3|mp4|m4a|m4b)
-         see mkdir "$sansext" &&
-         mv "$sanspath" "$sansext/" &&
-         z1d "$sansext/" &&
-         rm -rf "z1d_$sansext/" &&
-         [[ -f "$sansext.zip" ]] &&
-         mv "$sansext.zip" "$zfdout/"
+      mp3|mp4|m4a|m4b)  # degenerate/simple case: create zipfile consisting of dir containing input file
+         see mkdir "$z1dind" && mv "$sanspath" "$z1dind/abook.$ext"    && echo "zf-do1file: z1d setup ok" &&
+         z1d "$z1dind/" && [[ -f "$z1d_of" ]] && [[ -d "$z1d_od" ]] && echo "zf-do1file: z1d successful" &&
+         rm -rf "$z1d_od" && mv "$z1d_of" "$zfdout/"                && echo "zf-do1file: z1d cleanup ok"
          return ;;
    esac
 
-   if [[ "$ext" == "mp3" ]]; then return ; fi
-
-   [[ -d "$sansext" ]] && die "dir $sansext already exists"
-   7z e -o"$sansext" "$1" || die "7z extraction failed"
-   (cd "$sansext" && find . -type d -empty -delete)   # `7z e ...` can create empty dirs in output dir: delete them
-   # above is common to various scripts: unzips $1 into a dir of its own name (minus extension)
-   #
    # purpose: turn an input archive file (zip, rar) into a FLAT zip having
    #      within it a single directory bearing the basename of the source file
    #      (using z1d).
@@ -81,15 +76,14 @@ do1file() (
    #      archive formats supporting higher degrees of compression is completely
    #      beside the point.
    #
-   mv "$1" "$zfdin/"  # move input file (which might be a zip file) out of the way for z1d
-   z1d_okdir="z1d_$sansext"  # z1d renames $sansext to this on success
-   z1d_cleanup() { [[ -d "$z1d_okdir" ]] && rm -rf "$z1d_okdir" ; } # true iff dir existed and rm'd
-   restore_input() { mv "$zfdin/$1" "./$1" ; }
-   z1dof="$sansext.zip"
-   z1d "$sansext"    || { z1d_cleanup ; restore_input "$1" ; die "z1d failed" ; }
-   [[ -f "$z1dof" ]] || { z1d_cleanup ; restore_input "$1" ; die "expected z1d output file not found: $z1dof" ; }
-   mv "$z1dof" "$zfdout/"
-   z1d_cleanup || die "expected z1d-renamed dir not found: $z1d_okdir"
+   7z e -o"$z1dind" "$zf1if" || die "zf-do1file: 7z extraction failed"  # unzip $zf1if into a dir of its own name (sans extension)
+   mv "$zf1if" "$zf_saved/"  # save $zf1if; do it now (and undo on error) because if $zf1if is a zip file, $zf1if and $z1d_of will collide
+   restore_zf1if() { mv "$zf_saved/$zf1if" "./$zf1if" ; }
+   z1d_cleanup() { [[ -d "$z1d_od" ]] && rm -rf "$z1d_od" ; } # true iff dir existed and rm'd
+   z1d "$z1dind"      || { restore_zf1if ; z1d_cleanup ; die "zf-do1file: z1d failed" ; }
+   [[ -f "$z1d_of" ]] || { restore_zf1if ; z1d_cleanup ; die "zf-do1file: expected z1d output file not found: $z1d_of" ; }
+   mv "$z1d_of" "$zfdout/"
+   z1d_cleanup || die "zf-do1file: expected z1d-renamed dir not found: $z1d_od"
    echo "------------------------------- zf successful -------------------------------"
    )
 

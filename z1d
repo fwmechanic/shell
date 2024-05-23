@@ -26,6 +26,7 @@ do1file() (
       echo "$1 is a z1d_* dir, skipping"
       return
    fi
+   (cd "$1" && find . -type d -empty -delete)   # delete any empty dirs
    echo "base=$1'"
    notrs="${1%/}"
    echo "notrs=$notrs'"
