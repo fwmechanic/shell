@@ -48,8 +48,14 @@ for my $ifnm ( sort @ARGV ) {  # sort so that write_all_csv content will be sort
    my $lp_BillPeriod = sub { my $self = shift;
       if( m"^\s*Billing\s+Period:\s+\d{2}/\d{2}/(\d{2})\-(\d{2})/(\d{2})/(\d{2})" ) { print "yrMin/yrMax raw $1/$4\n";
          $self->set_stmtOpenCloseDates();
-         my $ASHdr = sprintf "%s STATEMENT Account Summary", qw(JANUARY FEBRUARY MARCH APRIL MAY JUNE JULY AUGUST SEPTEMBER OCTOBER NOVEMBER DECEMBER)[($2 =~ s!^0!!r)-1];
-         $self->add_section_hdr( $ASHdr, $AccountSummary );
+         my $mon = qw(JANUARY FEBRUARY MARCH APRIL MAY JUNE JULY AUGUST SEPTEMBER OCTOBER NOVEMBER DECEMBER)[($2 =~ s!^0!!r)-1];
+         if( 0 ) {  # less strict, but works (and maybe permissive is what's needed?)
+            $self->add_section_hdr( "$mon STATEMENT ", $AccountSummary );
+            }
+         else {     # alternative: two possible section headers, but (unresolved) is that only one will match, yielding an unmatched error
+            $self->add_section_hdr( "$mon STATEMENT Account Summary", $AccountSummary );
+            $self->add_section_hdr( "$mon STATEMENT Your next AutoPay payment of ", $AccountSummary );
+            }
          }
       };
    my $init_key = '(start_of_file)';

@@ -98,6 +98,7 @@ my $_norm_hr_keys = sub { my ($hr) = @_;
    };
 sub add_section_hdr { my $self = shift; my ($hdr,$coderef) = @_;
    print "add_section_hdr $hdr\n" ; # if $self->{opts}{v};
+   $hdr =~ s!\s+$!!;  # rmv trailing spaces in $hdr since \b appended by _updt_section_hdr_re will create a trailing /\s+\b/ which can never match
    $hdr =~ s!\s+!\\s+!g;
    $self->{section_parsers}{ $hdr } = $coderef;
    $self->_updt_section_hdr_re();
