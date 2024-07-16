@@ -1,0 +1,375 @@
+#!/usr/bin/perl
+
+# rename media files to meet my personal standard
+
+# 20120102 fwmechanic wrote this (finally!) (in Lua 5.1)
+# 20240715 fwmechanic converting to Perl5
+
+use strict;
+use warnings;
+use feature qw(signatures);
+no warnings "experimental::signatures";
+use Getopt::Std;
+use File::Find;
+#use Data::Dumper;
+use English;
+
+our ($opt_d,$opt_h,$opt_r,$opt_v);
+getopts( "dhrv" );
+
+my $mtpdf = 'medtype.pdf';
+my ($q1,$q2) = ("'", '"');
+# push( @ARGV, 'my/ebooks' ) unless scalar @ARGV > 0;  # undefine or empty to allow passing cmdline args (in arg variable)
+
+sub fnmdisp($fnm) {
+   $fnm =~ s!\\!/!g;
+   $fnm =~ s!^([A-Za-z]):/!/$1/!g;
+   if( ($fnm =~ m'[\$\s$q2&!|{}()]') && ($fnm !~ m!$q1!) ) {
+      $fnm = $q1 . $fnm . $q1;
+      }
+   elsif( $fnm =~ m!$q1! ) {
+      $fnm = $q2 . $fnm . $q2;
+      }
+   return $fnm;
+   }
+
+sub ms_esc($fnm) {
+   return fnmdisp($fnm);
+   }
+
+######################  filename discovery
+
+my @files;
+
+sub addFiles {
+   push @files, grep { -f $_ && !(-d $_ || -S $_ || -p $_ || -c $_ || -b $_ || -t $_) } @_;
+   }
+
+my $stopNm = '.qfno';
+sub scan_glob { # print "\$scan_glob( @_ )\n";
+   for my $dir ( @_ ) {  # print "\$dir = $dir\n";
+      if( -e "$dir/$stopNm" ) {
+         print( "$dir/$stopNm", " found, skipping\n" );
+         }
+      else {
+         addFiles( glob( $dir."/*" ) );
+         }
+      }
+   }
+
+sub scan_find { #print "\$scan_find( @_ )\n";
+   find(
+      sub {
+         return if $File::Find::dir =~ m!/\.(?:git|kbackup)!o;
+         if( -e $stopNm ) {
+            print( $File::Find::dir/$stopNm, " found, skipping\n" );
+            return;
+            }
+       # print "DIR: $File::Find::name\n" if -d;
+         addFiles( $File::Find::name );
+         }, @_
+       );
+   }
+
+my @dirs = @ARGV ? @ARGV : (".");
+my %seen;  @dirs = grep { not $seen{$_}++ } @dirs;  # remove dups, which $PATH often contains
+
+print "\@dirs=( @dirs )\n";
+my $ff = $opt_r ? \&scan_find : \&scan_glob;
+$ff->( @dirs );
+
+######################  filename filtering
+
+sub count( $base, $pattern ) {
+   my $count = () = $base =~ /$pattern/g;  # https://stackoverflow.com/a/25721353
+   return $count;
+   }
+
+my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+my $last_year = $year+1900+1;  # print( 'last_year', ' ', $last_year, "\n" );   # +1 cuz copyright can be 1 year ahead of today
+
+sub ynok ($yn)  { $yn = 0+$yn; return $yn > 1912 && $yn <= $last_year; }
+
+my @monlongs = qw( January February March April May June July August September October November December );
+# print( Dumper(\@monlongs) );
+my %t_monlongs = ();
+my %t_mons     = ();
+{ my $ix = 0; for my $lm ( @monlongs ) { ++$ix; $t_monlongs{$lm} = $ix; $t_mons{substr( $lm, 0 , 3 )} = $ix; }; }
+# print( Dumper(\%t_monlongs) );
+# print( Dumper(\%t_mons    ) );
+
+sub monconv($pat,$tbl) {
+   my $pat1 = '[-.]' . $pat . '\.' . '(\d{4})$';
+   my $pat2 = '[-.]' . $pat . '\.' . $pat . "\." . '(\d{4})$';   # print( 'mc+', ' ', $pat1, "\n", '    ', $pat2, "\n" );
+   return sub($fn,$) {                                           # print( 'mc+', ' ', $fn  , "\n", '    ', $pat , "\n" );
+      my ($m1,$m2,$yr) = $fn =~ /$pat2/;
+      # if( $yr ) { print( 'm1=', $m1, ' m2=', $m2, ' yr=', $yr, "\n" ); }
+      if( $yr && ynok( $yr ) && $tbl->{$m1} && $tbl->{$m2} ) {
+         return $fn =~ s/$pat2/sprintf(".%s.%02d",$yr,$tbl->{$m1})/reg;
+         }
+      ($m1,$yr) = $fn =~ /$pat1/;
+      # if( $yr ) { print( 'm1=', $m1, ' yr=', $yr, "\n" ); }
+      if( $yr && ynok( $yr ) && exists $tbl->{$m1} ) {  # print( 'mc#', ' ', $yr, ' ', $m1, "\n" );
+         return $fn =~ s/$pat1/sprintf(".%s.%02d",$yr,$tbl->{$m1})/reg;
+         }
+      return $fn;
+      }
+   }
+
+my %nm2trailYr;
+my %missingTrailYr;
+
+my @fn_suffix;
+my $fn_suffix;
+
+my @filters = (
+
+   #------------- preprocessing
+   sub($fn,$) { @fn_suffix = ();  return $fn; },
+   sub($fn,$) {        $fn =~ s!\.[^.]+$!                (push( @fn_suffix, $& ), '')!re; },  # sv_ext
+   sub($fn,$) {        $fn =~ s!(?:\.medtype|_cropped|)$!(push( @fn_suffix, $& ), '')!re; },  # sv_cropd
+
+   # convert exo-ASCII chars to punct
+   sub($fn,$) { return $fn =~ s!–!-!rg; },
+
+   sub($fn,$) { return $fn =~ s!^Letmeread\.net_!!r; },
+   sub($fn,$) { return $fn =~ s![\s\.]\(z\-lib\.org\)!!rg; },
+   sub($fn,$) { return $fn =~ s!\.mobilism\.org!!rg;; },
+
+   sub($fn,$) { return $fn =~ s!^[-.\s]+!!rg; },
+
+   sub($fn,$) { return count($fn, '[\.\_\s]')==0 && count($fn, '\-')>1 ? $fn =~ s!\-!.!rg : $fn; },  # some (e.g. magazine) file names are 100% '-' separated
+   sub($fn,$) {
+      if( count($fn, '[\-\.\_\s]')==0 && count($fn, '[A-Z][a-z]')>1 ) {  # some (e.g. magazine) file names are 100% CamelCase-only
+         $fn =~ s!([A-Z][a-z]+)!$1.!g;
+         $fn =~ s!(\d+)!$1.!g;
+         $fn =~ s!\.$!!g;
+         }
+      return $fn;
+      },
+
+   sub($fn,$) { return $fn =~ m![^_]_[^_]! ? $fn =~ s!__+!-!rg : $fn; },
+   sub($fn,$) { my $rv = $fn =~ s|[\s.,_! ]+|.|rg; 0 && print( 'NOX ', $rv, "\n");  return $rv; },
+
+   sub($fn,$) { return $fn =~ s!\.?\-\.?!-!rg; },
+
+   #------------- actual filters
+   monconv("([A-Za-z]+)"   , \%t_monlongs ),  # replace (publication) Monthname-Yyyy with Yyyy-mm
+   monconv("([A-Za-z]{3})" , \%t_mons     ),  # replace (publication) Mnm-Yyyy with Yyyy-mm
+
+   # sub ($fn,$) {  # replace LEADING publication Yyyy-mm-dd (or Yyyy.mm.dd) with TRAILING Yyyy.mm[.dd]
+   #    my ($yr,_,$mon,$day,$ix) = fn =~ m!^(\d\d\d\d)([\-\.])(\d\d)$2(\d\d)[\-\+\._]?()[A-Z]!;
+   #    if( ix ) {
+   #       return fn:sub( ix )  .  ('.' .  yr . '.' . mon)  .  (day eq '01' && '' or ('.' . day));
+   #       }
+   #    return fn
+   #    },
+
+   #sub monok($mon) { return $mon >= 1 && $mon <= 12; }
+   #sub (fn) # replace (publication) Yyyy-mm with Yyyy in older fnms
+   #   my $yr,mon = fn =~ m "\.(\d\d\d\d)\-(\d\d)$"
+   #   if( yr ) {
+   #      my $yn = tonumber(yr);
+   #      mon   = tonumber(mon);
+   #      # print( yr, " ? ", last_year,"\n" );
+   #      if( monok( mon ) && ynok( yn ) ) {
+   #         return fn =~ !\.(\d\d\d\d)\-\d\d$!.$1!rg;
+   #         }
+   #      }
+   #   return fn
+   #   },
+
+   sub($fn,$) { return $fn =~ s!\((\d\d\d\d)\)$!.$1!rg; },  # alt yr-of-publ fn format
+
+   sub($fn,$) { return $fn =~ s![${q1}‘’“”]!!rg; },
+   sub($fn,$) { return $fn =~ s![\._-]+$!!rg; },
+
+   sub($fn,$) { return $fn =~ s!([CcFf])#\.!$1sharp.!rg; },
+   sub($fn,$) { return $fn =~ s!^Black\.Decker!BD.!rg; },
+   sub($fn,$) { return $fn =~ s!\.039\.s\.!s.!rg; },
+
+   sub($fn,$) { return $fn =~ s!U\.S\.!US.!rg; },                                      # go
+   sub($fn,$) { return $fn =~ s!\.#(\d+)!.v$1!rg; },
+   sub($fn,$) { return $fn =~ s!\.#\.!.@.!rg; },
+   sub($fn,$) { return $fn =~ s![Ww]orld\.[Ww]ar\.[I1]\b!WW1$1!rg; },
+   sub($fn,$) { return $fn =~ s![Ww]orld\.[Ww]ar\.2\b!WW2$1!rg; },
+   sub($fn,$) { return $fn =~ s![Ww]orld\.[Ww]ar\.II\b!WW2$1!rg; },
+   sub($fn,$) { return $fn =~ s!\.[Ww][Ww]II!.WW2\b!rg; },
+
+   sub($fn,$) { return $fn =~ s![-.]1st\.[Ee]dition\b!.1e!rg; },
+   sub($fn,$) { return $fn =~ s![-.][Ff]irst\.[Ee]dition\b!.1e!rg; },
+   sub($fn,$) { return $fn =~ s![-.][Ss]econd\.[Ee]dition\b!.2e!rg; },
+   sub($fn,$) { return $fn =~ s![-.](\d+)[nr]d\.[Ee]dition\b!.$1e!rg; },
+   sub($fn,$) { return $fn =~ s![-.](\d+)th\.[Ee]dition\b!.$1e!rg; },
+
+   sub($fn,$) { return $fn =~ s![-.]&\.!.n.!rg; },                                       # go
+   sub($fn,$) { return $fn =~ s!\.downmagaz\.net!!rg; },
+   sub($fn,$) { return $fn =~ s!\.nodrm!!rg; },
+
+   #------------ pre-un-preprocessing
+
+   sub($fn,$) { $fn_suffix = join( '' , reverse @fn_suffix ); return $fn },
+   sub($fn, $dn) {
+      my ($nm,$trailYr4) = $fn =~ m!(.+)\.(\d{4})$!;
+      if( defined $trailYr4 ) {
+         $nm2trailYr{$nm} //= $trailYr4;
+         }
+      else {
+         if( exists $nm2trailYr{$fn} ) {
+            $fn .= '.' . $nm2trailYr{$fn};
+            }
+         else { # defer until post phase (when all possible files are in nm2trailYr)
+            push @{$missingTrailYr{$fn}}, [ $dn, $fn_suffix ]; # save enough bread crumbs to locate the file
+            }
+         }
+      return $fn;
+      },
+
+   #------------ un-preprocessing
+   sub($fn,$) { return $fn . $fn_suffix; },  # #########  MUST BE LAST   !!!
+   );
+
+my $destroy = $opt_d;  # true for production, false for no-op verification
+my ($rename_file,$remove_file,$mvUndoLog_fnm,$mvUndoLog,$mvCount);
+{
+   my $sms_esc = sub ($fn) {
+      my $mfn = ms_esc($fn);
+      $mfn = ' ' . $mfn unless $mfn =~ m!^[$q1$q2]!o;
+      return $mfn;
+      };
+   my $rm_msg = sub ($fn     ) { print( "removing ", $sms_esc->($fn), "\n" ); };
+   my $mv_msg = sub ($fn,$nfn) { print( "move.now ", $sms_esc->($fn), "\nmove.new ", $sms_esc->($nfn),"\n" ); };
+   if( $destroy ) {
+      my $logDnm = $ENV{"HOME"} or die "HOME not defined?\n";
+      $mvUndoLog_fnm = "$logDnm/qf_mv.log";
+      open( $mvUndoLog, '>>', $mvUndoLog_fnm ) || die;
+      print( {$mvUndoLog} "\n" );
+      # print( 'mvUndoLog_fnm ', $mvUndoLog_fnm, "\n" );
+      $mvCount = 0;
+      $rename_file = sub ($fn,$nfn) { $mv_msg->($fn,$nfn);
+         if( !rename( $fn, $nfn ) ) {
+            print( STDERR "!!! rename FAILED: $!\n" );
+            }
+         else {
+            print( {$mvUndoLog} 'mv -n ', $sms_esc->($nfn), ' ', $sms_esc->($fn), "\n" );
+            ++$mvCount;
+            }
+         };
+      $remove_file = sub ($fn) { $rm_msg->($fn); unlink($fn) or print( STDERR "!!! unlink FAILED: $!\n" ); }
+      }
+   else {
+      $rename_file = $mv_msg;
+      $remove_file = $rm_msg;
+      }
+}
+
+sub humanExtOf($fnm) {
+   return $mtpdf if $fnm =~ m!\Q.$mtpdf\E$!o;
+   return $fnm =~ m!(\.[^.]+)$! ? $1 : '???';
+   }
+
+sub splitfpath($fullnm) {  # print("fnm=",fullnm,"\n");
+   my ($dn,$fn) = $fullnm =~ m "(.+[\\/])([^\\/]+)$";
+   return ('',$fullnm) if ! $fn;
+   return ($dn,$fn);
+   }
+
+sub processFilenames($fnm) {
+   my ($dn,$fn) = splitfpath( $fnm );     #  print( "d=",$dn,",f=",$fn,"\n" );
+   my $nfn = $fn;                         #  print( "\n","nfn=",$nfn,"\n" );
+   my ($mb,$ix,$oldPrinted) = (0,0,0);
+   my @log;
+   for my $filter (@filters) {
+      my $_fn = $filter->( $nfn, $dn );
+      if( 1 && $_fn ne $nfn ) {
+         push( @log, sprintf( "old[%2d]=%s",$ix,$nfn ) ) unless $oldPrinted++;
+         push( @log, sprintf( "new[%2d]=%s",$ix,$_fn ) );
+         }
+      $nfn = $_fn;
+      ++$ix;
+      }                                   #   print( "now=",$fn,"\nnew=",$nfn,"\n" );
+   my $xt;
+   print( join( "\n", @log ), "\n" ) if $opt_v;
+   if( $nfn ne $fn ) {
+      print( join( "\n", @log ), "\n" ) unless $opt_v;
+      $fn  = $dn . $fn ;
+      $nfn = $dn . $nfn;                  #   print( "pnow=",$fn,"\npnew=",$nfn,"\n" );
+      my $fs  = -s $fn ;
+      my $nfs = -s $nfn;
+      if( ! -e $nfn ) {  # nothing in the way?
+         $rename_file->( $fn, $nfn );
+         $fnm = $nfn;
+         }
+      else {           # something in the way?
+         if( lc($fn) eq lc($nfn) ) {
+            print( "recase ",ms_esc($fn)," ",ms_esc($nfn),"\n" );
+            $rename_file->( $fn, $nfn );
+            }
+         else {
+            printf( "%8d %s\n",$nfs, ms_esc($nfn) );
+            printf( "%8d %s\n", $fs, ms_esc( $fn) );
+            if( $fs == $nfs ) {
+               $remove_file->($fn);
+               }
+            else {
+               $xt = humanExtOf( $nfn );
+               if( $xt eq $mtpdf ) {
+                  if( $fs > $nfs ) {
+                     $remove_file->($fn);
+                     }
+                  else {
+                     $remove_file->( $nfn );
+                     $rename_file->( $fn, $nfn );
+                     }
+                  }
+               else {
+                  print( "move blocked" );
+                  if( $xt eq 'epub' ) {
+                     print( "\n" , 'diff_epub ', ms_esc($nfn), ' ', ms_esc($fn) );
+                     }
+                  $mb = 1;
+                  }
+               }
+            }
+         printf( "\n" );
+         }
+      }
+   return ($mb, $xt);
+   }
+
+my $mvBlocked = 0;
+my %countByExt;
+sub processFiles() {
+   for my $nm ( @files ) {
+      my ($mb,$xt) = processFilenames( $nm );
+      $mvBlocked = $mvBlocked + $mb;
+      if( $xt ) {
+         ++$countByExt{$xt};
+         }
+      }
+   }
+
+processFiles();
+
+for my $fn ( keys %missingTrailYr ) {
+   if( exists $nm2trailYr{$fn} ) {
+      my $yr4 = $nm2trailYr{$fn};
+      for my $aref1 ( @{$missingTrailYr{$fn}} ) {
+         my ($dn, $suffix) = @{$aref1}[0..1];
+         print( "FixMiss.old=\n", join( '', ($dn, $fn      , $suffix) ), "\n" );
+         print( "FixMiss.new=\n", join( '', ($dn, $fn, $yr4, $suffix) ), "\n" );
+         }
+      }
+   }
+
+print("examined ", scalar @files, " filenames, ", $mvBlocked, " moves blocked\n" );
+if( $mvUndoLog_fnm && $mvUndoLog ) {
+   close( {$mvUndoLog} );
+   if( $mvCount && $mvCount > 0 ) {
+      print( $mvCount, ' files moved, undo instructions in ', $mvUndoLog_fnm, "\n" );
+      }
+   }
+
+for my $xt ( sort keys %countByExt ) {
+   printf( "%-12s %4d\n", $xt, $countByExt{$xt} );
+   }
