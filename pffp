@@ -109,13 +109,15 @@ sub ffp_vidfprint { my ($fnm) = @_;
 
 sub vid_keyframe_before_rd_intvl { my ($fnm,$t0,$tms,$t1) = @_;  # https://stackoverflow.com/a/14011638
    print "vid_keyframe_before_rd_intvl+ $fnm,$t0,$tms,$t1\n";     # https://ffmpeg.org/ffprobe.html read_intervals
-   my $cmd = 'ffprobe -v error -hide_banner -read_intervals '."$t0\%$t1".' -select_streams v:0 -skip_frame nokey -show_entries frame=pts_time,key_frame -print_format compact "'.$fnm.'" 2>&1';
-   print "vid_keyframe_before_rd_intvl: cmd=",$cmd,"\n" if $verb;
+   # 20240717 pkt_pts_time (deprecated 21.12) replaced by pts_time.  https://lists.ffmpeg.org/pipermail/ffmpeg-trac/2021-December/060570.html
+   my $cmd = 'ffprobe -v error -hide_banner -read_intervals '."$t0\%$t1".' -select_streams v:0 -skip_frame nokey -show_entries frame=pts_time,pkt_pts_time,key_frame -print_format compact "'.$fnm.'" 2>&1';
+   print "vid_keyframe_before_rd_intvl: cmd=\n",$cmd,"\n" if $verb;
    my @keyframes = qx( $cmd );
    die "command failed\n" unless chkExtProc() == 0;
    my $best;
+
    for( @keyframes ) { #   # frame|key_frame=1|pts_time=593.926667  # key_frame is redundant since always 1 due to `-skip_frame nokey`
-      if( my($ptstime) = /\|pts_time=(\d+\.\d+)/ ) {
+      if( my($ptstime) = /\|(?:pkt_)?pts_time=(\d+\.\d+)/ ) {
          print;
        # printf "%12.6f\n", $ptstime;
          if( $ptstime > $tms ) {  # choose between last kf before $tms (current $best) and first kf after $tms
@@ -125,7 +127,7 @@ sub vid_keyframe_before_rd_intvl { my ($fnm,$t0,$tms,$t1) = @_;  # https://stack
          $best = $ptstime;
          }
       }
-   die unless defined $best;
+   die "no best pts_time found; invalid ffprobe -show_entries frame=XXX?\n" unless defined $best;
    if( defined $best && $best < $t0 || $best > $t1 ) {
       $best = undef;
       }
