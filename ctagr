@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# Universal Ctags wrapper script generating tags file compatible with k_edit
+
+TAGS_FIELDS=+K+z+S+l+n
+#            K           Kind of tag as full name
+#              z         Include the "kind:" key in kind field (use k or K) in tags output
+#                S       Signature of routine (e.g. prototype or parameter list)
+#                  l     Language of input file containing tag
+#                    n   Line number of tag definition
+TAGS_EXTRAS=+f
+#            f           Include [a tag record] for the base file name of every input file
+
+ctags --totals=yes --tag-relative=yes --excmd=number --fields=$TAGS_FIELDS --extras=$TAGS_EXTRAS --recurse
