@@ -4,3 +4,4 @@ ep -q ./*.epub
 ep -q ./*.azw[34]
 ep -q ./*.mobi
 ep -q ./*.chm
+ep -q ./*.fb2
