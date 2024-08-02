@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+# silly little wrapper as 7z does not seem able to process multiple archive files
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+dieifnotinpath wmctrl
+
+wmctrl -r :ACTIVE: -b add,maximized_vert,maximized_horz

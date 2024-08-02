@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# Usage: in package.json
+#
+#  "scripts": {
+#    . . .
+#    "debug":     "yarn build && (if command -v egdb >/dev/null ; then egdb ; fi ; true) ; node --inspect dist/server.js",
+#    "debug-brk": "yarn build && (if command -v egdb >/dev/null ; then egdb ; fi ; true) ; node --inspect-brk dist/server.js"
+#  },
+#
+# Unfortunately the AI-sourced option `--new-window 'edge://inspect'` appears to
+# have *no effect*: the new Edge window opens to the default/"home" page.
+# (browsers seem VERY intent on users NOT being able to invoke their non-URL (or:
+# internal URL?) endpoints from the command line.
+#
+# Two workarounds:
+# 1.  When invoking via `yarn debug-brk` (above), switch to Edge and use a
+#     bookmark to open edge://inspect, then click on the `open node debugger`
+#     link therein to interactively set breakpoints and start execution (F8).
+#     This is tedious.
+#
+# 2.  When you've added `debugger` statements(?) into your node source code,
+#     invoke via `yarn debug-brk` (above).  If/when these `debugger` breakpoints
+#     are hit, the one open Edge window/tab (opened by this script) will switch
+#     to its Inspect Node Debugger, and cause focus to be put on it.  This is
+#     almost magical, but I am uncertain as to its reliability because I don't
+#     understand why Edge is the browser receiving this "hit a breakpoint" event
+#     when Firefox (which also has Dev Tools functionality?) is the app that I
+#     was interacting with at the time the BP was hit (i.e. is what I was using
+#     to provide the input that *caused* the BP to be hit).
+#
+# Caveats: (1) my usage is (thus far) entirely on (Pop!OS) Linux, and (2) except
+#     for this script, Edge is *never* open on my PC (the *only* reason I've
+#     installed Edge is for node.js debugging purposes).
+
+if command -v microsoft-edge >/dev/null ; then
+   microsoft-edge --new-window 'edge://inspect/#devices' 2>/dev/null &
+   jobs
+else
+   echo "microsoft-edge is not available/installed"
+fi

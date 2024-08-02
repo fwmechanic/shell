@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# sudo wrapper that includes my environment customizations
+
+sudo -E bash -c 'source ~/.bashrc && bash'
+
+# When you use sudo with the -E flag (to preserve the user's existing
+# environment variables), the $HOME environment variable will still point to
+# your user's home directory, not root's, thus ~ (tilde) will refer to the
+# home directory of the user invoking sudo, not the root user's home
+# directory (/root).  This applies both to the command line and within the
+# files being sourced.
+#
+# The ~ here refers to your user's home directory, not root's.
+# Within ~/.bashrc and ~/.bash_aliases:
+#    Any ~ used in these files will also refer to your user's home directory.
