@@ -1,0 +1,37 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use File::Basename;
+
+# Check if we have the correct number of arguments
+die "Usage: $0 <filename> <number_of_bytes>\n" unless @ARGV == 2;
+my ($filename, $num_bytes) = @ARGV;
+
+$num_bytes = 0 + $num_bytes;
+$num_bytes > 0 or die "num_bytes ($num_bytes) must be > 0\n";
+
+my $file_size = -s $filename;
+$file_size > $num_bytes or die "file size ($file_size) is larger than number of bytes to extract ($num_bytes)\n";
+
+my $start_offset = int(rand($file_size - $num_bytes + 1));  # Generate a random start offset
+
+my $data;
+{
+open my $in_fh, '<:raw', $filename or die "Could not open $filename: $!";
+seek $in_fh, $start_offset, 0; # Seek to the random start position
+read $in_fh, $data, $num_bytes;  # Read the specified number of bytes
+close $in_fh;
+}
+
+# Generate the new filename
+my ($basename, $dir, $ext) = fileparse($filename, qr/\.[^.]*$/);  # print $dir, "\n";
+my $new_filename = sprintf("%s%s.%d.%d.%d%s", $dir, $basename, $num_bytes, length($data), $start_offset, $ext);
+
+{
+open my $out_fh, '>:raw', $new_filename or die "Could not open $new_filename for writing: $!";
+print $out_fh $data;
+close $out_fh;
+}
+
+print "$filename\[ \@$start_offset L $num_bytes \] -> $new_filename\n";

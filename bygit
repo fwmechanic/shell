@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+while IFS= read -r file; do
+    if git ls-files --error-unmatch -- "$file" &>/dev/null; then
+        :   # printf "%s: Managed by Git\n" "$file"
+    else
+        printf "%s: Not managed by Git\n" "$file"
+    fi
+done

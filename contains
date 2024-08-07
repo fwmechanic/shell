@@ -1,0 +1,74 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use File::Basename;
+
+# Check if we have the correct number of arguments
+if (@ARGV != 2) {
+    die "Usage: $0 <file1> <file2>\n";
+}
+
+my ($file1, $file2) = @ARGV;
+
+# Determine which file is larger and which is smaller
+my $file1_size = -s $file1;
+my $file2_size = -s $file2;
+
+my ($larger_file, $smaller_file);
+
+if ($file1_size > $file2_size) {
+    $larger_file = $file1;
+    $smaller_file = $file2;
+} elsif ($file2_size > $file1_size) {
+    $larger_file = $file2;
+    $smaller_file = $file1;
+} else {
+    die "Error: Both files are the same size. One file must be smaller than the other.\n";
+}
+
+sub read_file {
+    my ($filename) = @_;
+    open my $fh, '<:raw', $filename or die "Could not open $filename: $!";
+    local $/;
+    my $content = <$fh>;
+    close $fh;
+    return $content;
+}
+
+# Read the content of both files
+my $larger_content = read_file($larger_file);
+my $smaller_content = read_file($smaller_file);
+
+# Get the lengths of the contents
+my $larger_length = length($larger_content);
+my $smaller_length = length($smaller_content);
+
+# Search for the smaller content within the larger content
+my $offset = index($larger_content, $smaller_content);
+
+if ($offset != -1) {
+    print "Validation successful!\n";
+    print "The content of '$smaller_file' (size: $smaller_length bytes) was found at offset $offset of '$larger_file' (size: $larger_length bytes).\n";
+
+    # Extract filename components for verification
+    my ($smaller_basename, $dir, $ext) = fileparse($smaller_file, qr/\.[^.]*$/);
+    my ($num_bytes, $actual_length, $reported_offset) = $smaller_basename =~ m!\.(\d+)\.(\d+)\.(\d+)$!;
+    if ($reported_offset) {
+        if ($num_bytes == $smaller_length && $actual_length == $smaller_length && $reported_offset == $offset) {
+            print "The filename components match the actual values:\n";
+            print "Number of bytes: $num_bytes\n";
+            print "Actual length:   $actual_length\n";
+            print "Offset:          $offset\n";
+        } else {
+            print "Warning: Some filename components do not match the actual values:\n";
+            print "Number of bytes (filename vs actual): $num_bytes vs $smaller_length\n";
+            print "Length (filename vs actual): $actual_length vs $smaller_length\n";
+            print "Offset (filename vs actual): $reported_offset vs $offset\n";
+        }
+    } else {
+        print "Warning: Couldn't parse the smaller filename for additional validation.\n";
+    }
+} else {
+    print "Validation failed: The content of the smaller file was not found in the larger file.\n";
+}
