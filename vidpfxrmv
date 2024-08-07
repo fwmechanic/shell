@@ -16,10 +16,13 @@ die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 [[ -f "$1" ]] || die "$1 is not a file"
 
 ext="${1##*.}"  # ffmpeg behavior DEPENDS ON the DEST FILE EXTENSION you provide, so derive from input fnm
-if [[ "$ext" == "mp3" || "$ext" == "ogg" ]] ; then
-   { set -x 2> /dev/null ; }
-   # NB: ffmpeg argments are ORDER SENSITIVE!!!  http://www.markbuckler.com/post/cutting-ffmpeg/  (see "All-Frame Seeking")
-   "${FFMPEG:-"ffmpeg"}" -hide_banner -y -ss "$2" -i "$1" -c copy "out.$ext"
-else
-   pffp --if="$1" --tm="$2" rp  # new implementation cuts video files on nearest key frame
-   fi
+case "$ext" in
+   mp3 | ogg | aac)
+      { set -x 2> /dev/null ; }
+      # NB: ffmpeg argments are ORDER SENSITIVE!!!  http://www.markbuckler.com/post/cutting-ffmpeg/  (see "All-Frame Seeking")
+      "${FFMPEG:-"ffmpeg"}" -hide_banner -y -ss "$2" -i "$1" -c copy "out.$ext"
+      ;;
+   *)
+      pffp --if="$1" --tm="$2" rp  # new implementation cuts video files on nearest key frame
+      ;;
+   esac
