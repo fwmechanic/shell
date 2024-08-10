@@ -1,0 +1,11 @@
+#!/bin/bash
+
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+dieifnotinpath tree
+
+tree --dirsfirst --gitignore -I 'node_modules|dist|build|.next|.vscode|coverage'

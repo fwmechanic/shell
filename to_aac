@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# Check if any input files are provided
+if [ $# -eq 0 ]; then
+    echo "Please provide one or more input files."
+    echo "Usage: $0 <input_audio_file1> [input_audio_file2 ...]"
+    exit 1
+fi
+
+# Loop through all command-line arguments
+for input_file in "$@"; do
+    # Check if the input file exists
+    if [ ! -f "$input_file" ]; then
+        echo "Error: File '$input_file' not found. Skipping."
+        continue
+    fi
+
+    # Get the base name of the file (without any extension)
+    base_name=$(basename "$input_file")
+    base_name="${base_name%.*}"
+
+    # Set the output filename
+    output_file="${base_name}.aac"
+
+    echo "Converting $input_file to $output_file"
+
+    # Perform the conversion
+    ffmpeg -i "$input_file" -c:a aac "$output_file"
+
+    # Check if the conversion was successful
+    if [ $? -eq 0 ]; then
+        echo "Conversion complete for $input_file. Output file: $output_file"
+    else
+        echo "Conversion failed for $input_file."
+    fi
+
+    echo "-----------------------------------"
+done
+
+echo "All conversions completed."
