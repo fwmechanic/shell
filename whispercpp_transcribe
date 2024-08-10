@@ -1,0 +1,53 @@
+#!/bin/bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+
+whispercpp_dnm="$HOME/my/oss_builds/whisper.cpp-1.6.2"
+whispermain="$whispercpp_dnm/main"
+threads=12
+model="ggml-medium.en-q5_0.bin"
+modelabs="$whispercpp_dnm/models/$model"
+
+test -x "$whispermain" || die "not an executable file: $whispermain"
+test -f "$1" || die "not a file: $1"
+test -f "$modelabs" || die "not a file: $modelabs"
+
+is_16khzwav() { ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,sample_rate -of csv=p=0 "$1" | grep -q 'pcm_s16le,16000' ; }
+
+do1file() (
+   if is_16khzwav "$1"; then
+      wav16_in="$1"
+   else
+      fullname="$1"
+      dirname="$(dirname -- "${fullname}")"     ; echo "dirname   $dirname"
+      filename="$(basename -- "${fullname}")"   ; echo "filename  $filename"
+      extension="${filename##*.}"               ; echo "extension $extension"
+      basename="${filename%.*}"                 ; echo "basename  $basename"
+
+      output_file="$dirname/$basename.16khzwav"
+      input_file="$dirname/$basename.$extension"
+
+      see ffmpeg -i "$input_file" -f wav -ar 16000 -ac 1 "$output_file" || die
+
+      wav16_in="$output_file"
+      fi
+
+   # of=output filename; extensionless version of $1; whisper will append ".lrc" to it
+   fullname="$1"
+   dirname="$(dirname -- "${fullname}")"     ; echo "dirname   $dirname"
+   filename="$(basename -- "${fullname}")"   ; echo "filename  $filename"
+   extension="${filename##*.}"               ; echo "extension $extension"
+   basename="${filename%.*}"                 ; echo "basename  $basename"
+   of="$dirname/$basename" # whisper will append ".lrc"
+
+   see "$whispermain" -t "$threads" -olrc -m "$modelabs" -f "$wav16_in" -of "$of"
+   if [ "$wav16_in" != "$1" ]; then
+      see rm "$wav16_in"
+      fi
+   )
+
+for fnm in "$@"; do
+   do1file "$fnm"
+done
