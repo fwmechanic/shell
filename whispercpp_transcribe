@@ -42,7 +42,7 @@ do1file() (
    basename="${filename%.*}"                 ; echo "basename  $basename"
    of="$dirname/$basename" # whisper will append ".lrc"
 
-   see "$whispermain" -t "$threads" -olrc -m "$modelabs" -f "$wav16_in" -of "$of"
+   see "$whispermain" -t "$threads" -np -pp  -m "$modelabs" -f "$wav16_in" -olrc -of "$of"
    if [ "$wav16_in" != "$1" ]; then
       see rm "$wav16_in"
       fi
