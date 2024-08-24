@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+# impressively, you must run `dpkg-query -L passwordsafe` to figure out that the name of the program is pwsafe!
+
+command -v pwsafe || die "pwsafe not in PATH; need to `sudo apt install passwordsafe`"
+
+see pwsafe $HOME/my/repos/pers/kgpass.lib
