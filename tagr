@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
 # keep in sync with %~dp0../winscripts/tagr.bat !!!
 # eXclude .gitignored files per https://github.com/universal-ctags/ctags/issues/218#issuecomment-377717588
 
@@ -14,4 +17,32 @@ TAGS_EXTRAS=+f
 
 TAGS_FNM_BASE=.k_edit_tags
 
-rg --files | ctags -o "$TAGS_FNM_BASE" --totals=yes --tag-relative=yes --excmd=number --fields="$TAGS_FIELDS" --extras="$TAGS_EXTRAS" "$@" --recurse --links=no -L -
+CTAGS_CLI=(
+    ctags
+    --options="$HOME/.ctags"  # this file is NOT automatically read by ctags!!! (and you can't use ~/.ctags here!)
+    -o "$TAGS_FNM_BASE"       # specify output file
+  # --totals=yes              # print statistics about input and output
+    --tag-relative=yes        # use paths relative to the tag file
+    --excmd=number            # use line numbers instead of search patterns
+    --fields="$TAGS_FIELDS"   # specify extra fields to include in output
+    --extras="$TAGS_EXTRAS"   # include extra tag entries
+    --links=no                # don't follow symlinks
+  # --verbose                 # print debug messages
+)
+
+#                          | tee /dev/stderr
+#
+rg()  { command rg --files | "${CTAGS_CLI[@]}"             "$@" -L -      ; }
+all() { see                  "${CTAGS_CLI[@]}" --quiet=yes "$@" --recurse ; }
+
+"${1:-rg}" 2>&1 > /dev/null | grep -vF "ctags: Notice: ignoring null tag in"
+
+before="$(< "$TAGS_FNM_BASE" wc -l)"
+grep -vF 'anonymousObject' "$TAGS_FNM_BASE" > "$TAGS_FNM_BASE".tmp ; mv "$TAGS_FNM_BASE".tmp "$TAGS_FNM_BASE"
+after="$(< "$TAGS_FNM_BASE" wc -l)"
+
+if (( before > after )) ; then
+   echo "$after tags (after removing $((before - after)) anonymousObject tags)"
+else
+   echo "$after tags"
+   fi
