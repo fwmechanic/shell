@@ -34,7 +34,7 @@ do1file() (
    [[ -d "$z1dind" ]] && die "zf-do1file: z1d input-dir already exists"
 
    case "$ext" in
-      mp3|mp4|m4a|m4b)  # degenerate/simple case: create zipfile consisting of dir containing input file
+      mp3|mp4|m4a|m4b|mpga|ogg)  # degenerate/simple case: create zipfile consisting of dir containing input file
          see mkdir "$z1dind" && mv "$sanspath" "$z1dind/abook.$ext"    && echo "zf-do1file: z1d setup ok" &&
          z1d "$z1dind/" && [[ -f "$z1d_of" ]] && [[ -d "$z1d_od" ]] && echo "zf-do1file: z1d successful" &&
          rm -rf "$z1d_od" && mv "$z1d_of" "$zfdout/"                && echo "zf-do1file: z1d cleanup ok"

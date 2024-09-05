@@ -10,6 +10,8 @@
 #
 # this impl is WAY faster than any shell scripting solution (using `find -exec`) I've tried.
 #
+# EX usage: shebang bash | xargs grep tree
+#
 # 20210114 Thu fwmechanic wrote
 #
 
