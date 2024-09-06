@@ -77,10 +77,6 @@ while (my $file = <STDIN>) {
 
     my $relative_path = File::Spec->abs2rel($file, $cwd);
 
-    # Add entry for the base filename
-    my ($filename) = $relative_path =~ m/([^\/]+)$/;
-    output_tag($filename, $relative_path, 1, 'file');
-
     open(my $in_fh, '<', $file) or die "Could not open file '$file' $!";
 
     my $current_class = "";
