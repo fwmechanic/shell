@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+# keep in sync with %~dp0/tagr !!!
+# eXclude .gitignored files per https://github.com/universal-ctags/ctags/issues/218#issuecomment-377717588
+
+TAGS_FIELDS=+K+z+S+l+n
+#            K           Kind of tag as full name
+#              z         Include the "kind:" key in kind field (use k or K) in tags output
+#                S       Signature of routine (e.g. prototype or parameter list)
+#                  l     Language of input file containing tag
+#                    n   Line number of tag definition
+TAGS_EXTRAS=+f
+#            f           Include [a tag record] for the base file name of every input file
+
+TAGS_FNM_BASE=.k_edit_tags
+RAW_TAGS="${TAGS_FNM_BASE}.original"
+
+CTAGS_CLI=(
+    ctags
+    -o "${RAW_TAGS}"          # specify output file
+  # --totals=yes              # print statistics about input and output
+    --tag-relative=yes        # use paths relative to the tag file
+    --excmd=number            # use line numbers instead of search patterns
+    --fields="$TAGS_FIELDS"   # specify extra fields to include in output
+    --extras="$TAGS_EXTRAS"   # include extra tag entries
+    --links=no                # don't follow symlinks
+  # --verbose                 # print debug messages
+)
+
+#                          | tee /dev/stderr
+#
+rg() {
+   local ts_tagger_ofnm="ts_tags.txt"
+   command rg --files > .rgfiles
+   ( # run the following two commands in parallel and wait for both to complete
+    grep '\.ts$' .rgfiles | ts_tagger > "$ts_tagger_ofnm"  &
+    <.rgfiles "${CTAGS_CLI[@]}" "$@" -L - &
+    wait
+   )
+   local ctags_cnt tts_cnt merged_cnt
+   ctags_cnt="$(<"$RAW_TAGS" wc -l)" tts_cnt="$(<"$ts_tagger_ofnm" wc -l)"
+   echo "tagts: $ctags_cnt tags in ctags output; $RAW_TAGS"
+   echo "tagts: $tts_cnt tags in ts_tagger output; $ts_tagger_ofnm"
+   cat "$RAW_TAGS" "$ts_tagger_ofnm" | LC_ALL=C sort -u > "$TAGS_FNM_BASE"
+   # ??? grep -vF 'anonymousObject'
+   merged_cnt="$(<"$TAGS_FNM_BASE" wc -l)"
+   local diff=$((ctags_cnt + tts_cnt - merged_cnt))
+   local diffo=''
+   if (( diff > 0 )); then
+    # diffo=" ($diff dup tags removed; $((merged_cnt - ctags_cnt)) net tags added by ts_tagger)"
+      diffo=" (rmvd $diff dup tags; ts_tagger added $((merged_cnt - ctags_cnt)) net tags)"
+      fi
+   echo "tagts: $merged_cnt tags in merged output $TAGS_FNM_BASE$diffo"
+   local spot_chks=0  # only the paranoid survive!
+   local spot_passes=0  # only the paranoid survive!
+   spot_chk() { spot_chks=$((1+spot_chks)) ; grep -qF "$1" "$TAGS_FNM_BASE" || die "tagts: $1 not found in $TAGS_FNM_BASE" ; spot_passes=$((1+spot_passes)) ;  }
+   spot_chk testExpandPromptTemplate
+   spot_chk expandPromptTemplate
+   spot_chk generateCorpSet
+   spot_chk performLookup
+   spot_chk handleNaturalLangQuery
+   spot_chk request
+   spot_chk ctxtQNum
+   spot_chk decideNextAction
+   spot_chk analyzeAndHandleFileOperations
+   spot_chk processFileContents
+   spot_chk readIdentifiedFiles
+   spot_chk analyzeMessagesForFileOperations
+   spot_chk gptMsgs
+   spot_chk dispMessageIds
+   spot_chk getMessageIds
+   spot_chk sortDeDupMessages
+   spot_chk clearMessages
+   spot_chk addMemoMessage
+   spot_chk addMessage
+   spot_chk addMessageById
+   (( spot_chks == spot_passes )) || die "$((spot_chks - spot_passes)) spot-checks FAILED!"
+   echo "tagts: all $spot_chks spot_chk's passed"
+}
+
+all() { see "${CTAGS_CLI[@]}" --quiet=yes "$@" --recurse ; }
+one() { see "${CTAGS_CLI[@]}" --quiet=yes "$1" ; }
+
+fxnm=rg  # default subcommand
+if [[ "$1" ]]; then
+   fxnm="$1" ; shift
+   fi
+
+"${fxnm}" "$@"
