@@ -48,6 +48,19 @@ my $method_pattern = qr/^
     \s*(?:{|$)                            # Opening brace or end of line
 /x;  # Allow comments and whitespace in regex
 
+# Additional pattern for standalone function declarations
+my $function_pattern = qr/^
+    \s*(?:export\s+)?                     # Optional export keyword
+    (?:async\s+)?                         # Optional async keyword
+    function\s+                           # 'function' keyword (required for standalone functions)
+    (\w+)                                 # Function name
+    (?:<[^>]+>)?                          # Optional generic type parameters
+    \s*(?:\([^)]*\)|\()                   # Parameters (potentially empty or start of multi-line)
+    (?:\s*:\s*(?:Promise<[^>]+>|[^{;]+))? # Optional return type
+    \s*(?:{|$)                            # Opening brace or end of line
+/x;
+
+
 # List of reserved keywords and common function calls to exclude
 my %exclude_words = map { $_ => 1 } qw(
     break case catch class const continue debugger default delete do else
@@ -92,20 +105,23 @@ while (my $file = <STDIN>) {
             output_tag($current_class, $relative_path, $line_number, 'class', $extends);
         }
 
-        if ($line =~ $method_pattern) {
+        if ($current_class && $line =~ $method_pattern) {
             my $method_name = $1;
             # Only add the tag if the method name is not in the exclude list
             unless ($exclude_words{$method_name}) {
-                if ($current_class) {
-                    output_tag($method_name, $relative_path, $line_number, 'method', "class:$current_class");
-                } else {
-                    output_tag($method_name, $relative_path, $line_number, 'function');
-                }
+                output_tag($method_name, $relative_path, $line_number, 'method', "class:$current_class");
+            }
+        }
+        elsif ($line =~ $function_pattern) {
+            my $function_name = $1;
+            # Only add the tag if the function name is not in the exclude list
+            unless ($exclude_words{$function_name}) {
+                output_tag($function_name, $relative_path, $line_number, 'function');
             }
         }
     }
 
-    close($in_fh);
+    close($in_fh);  # Make sure to close the file handle
 }
 
 # print STDERR "Processed $tag_count tags\n";
