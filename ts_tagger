@@ -1,0 +1,115 @@
+#!/usr/bin/env perl
+
+# what this does:
+#   * given a list of .ts (Typescript) files on stdin
+#   * output basic tags to stdout
+#   * in format matching `Universal Ctags` when run with options:
+#       --tag-relative=yes --excmd=number --fields=+K+z+S+l+n --extras=+f
+#
+# why it exists:
+#   Because current (20240901) HEAD of `Universal Ctags`, when scanning .ts
+#   (Typescript) files *that build*, often "loses its mind" and fails to generate
+#   even the most basic tags (e.g. for class methods), which is an *utterly
+#   crippling* *functional failure* that renders me less effective in my work
+#   (Node TS).  Since I cannot possibly fix whatever is lacking in the `Universal
+#   Ctags` Typescript language parser, which has apparently been in existence for
+#   some years, but isn't being fixed (see its github Issues, where there are
+#   various pleas for Typescript (among others) parsing experts to assist), and
+#   since my attempts to modify/augment ctags regex parameterization were leading
+#   to naught but insanity, I thought (thinking back to those "ctags regex
+#   parameterization" attempts and how they *might* work if used in isolation)
+#   "how about I just add-in the tags that, if certain assumptions about code
+#   formatting are made, should be easy to generate via line-based parsing of the
+#   source file?" Of course, the devil is in the words "should be".  But it turns
+#   out (so far) to be feasible.
+#
+# integration:
+#   see script `tagts`
+
+use strict;
+use warnings;
+use File::Spec;
+use Cwd;
+
+my $cwd = getcwd();
+my $debug = $ENV{DEBUG} // 0;
+
+my $class_pattern = qr/^(?:export\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?/;
+my $method_pattern = qr/^
+    \s*(?:export\s+)?                     # Optional export keyword
+    (?:public|private|protected)?\s*      # Optional access modifier
+    (?:static\s+)?                        # Optional static keyword
+    (?:async\s+)?                         # Optional async keyword
+    (?:function\s+)?                      # Optional function keyword
+    (\w+)                                 # Method name
+    (?:<[^>]+>)?                          # Optional generic type parameters
+    \s*(?:\([^)]*\)|\()                   # Parameters (potentially empty or start of multi-line)
+    (?:\s*:\s*(?:Promise<[^>]+>|[^{;]+))? # Optional return type
+    \s*(?:{|$)                            # Opening brace or end of line
+/x;  # Allow comments and whitespace in regex
+
+# List of reserved keywords and common function calls to exclude
+my %exclude_words = map { $_ => 1 } qw(
+    break case catch class const continue debugger default delete do else
+    enum export extends false finally for if import in instanceof
+    new null return super switch this throw true try typeof var void while with
+    as implements interface let package private protected public static yield
+    any boolean constructor declare get module require set symbol type from of
+    assert console log warn error
+);
+
+my $tag_count = 0;
+
+sub output_tag {
+    my ($name, $file, $line, $kind, $extra) = @_;
+    if ($debug) {
+        printf STDERR "DEBUG: %s | %s | %d | %s | %s\n", $name, $file, $line, $kind, $extra // '';
+    } else {
+        printf "%s\t%s\t%d;\"\tkind:%s\tline:%d\tlanguage:TypeScript%s\n",
+               $name, $file, $line, $kind, $line, $extra ? "\t$extra" : '';
+    }
+    $tag_count++;
+}
+
+while (my $file = <STDIN>) {
+    chomp $file;
+    next unless -f $file; # Skip if not a regular file
+
+    my $relative_path = File::Spec->abs2rel($file, $cwd);
+
+    # Add entry for the base filename
+    my ($filename) = $relative_path =~ m/([^\/]+)$/;
+    output_tag($filename, $relative_path, 1, 'file');
+
+    open(my $in_fh, '<', $file) or die "Could not open file '$file' $!";
+
+    my $current_class = "";
+    my $line_number = 0;
+
+    while (my $line = <$in_fh>) {
+        chomp $line;
+        $line_number++;
+
+        if ($line =~ $class_pattern) {
+            $current_class = $1;
+            my $extends = $2 ? "inherits:$2" : "";
+            output_tag($current_class, $relative_path, $line_number, 'class', $extends);
+        }
+
+        if ($line =~ $method_pattern) {
+            my $method_name = $1;
+            # Only add the tag if the method name is not in the exclude list
+            unless ($exclude_words{$method_name}) {
+                if ($current_class) {
+                    output_tag($method_name, $relative_path, $line_number, 'method', "class:$current_class");
+                } else {
+                    output_tag($method_name, $relative_path, $line_number, 'function');
+                }
+            }
+        }
+    }
+
+    close($in_fh);
+}
+
+# print STDERR "Processed $tag_count tags\n";
