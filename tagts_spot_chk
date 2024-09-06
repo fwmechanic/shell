@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+# project-dependent spot-checks of ts_tagger results; ONLY THE PARANOID SURVIVE!
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+tags_fnm="$1"
+
+spot_chks=0
+spot_passes=0
+spot_chk() {
+   spot_chks=$((1+spot_chks)) ;
+   if ! grep -qF "$1" "$tags_fnm"; then
+      echo "tagts_spot_chk: $1 not found in $tags_fnm"
+      return
+      fi
+   spot_passes=$((1+spot_passes)) ;
+   }
+
+spot_chk addMemoMessage
+spot_chk addMessage
+spot_chk addMessageById
+spot_chk addUserFile
+spot_chk analyzeAndHandleFileOperations
+spot_chk analyzeMessagesForFileOperations
+spot_chk clearMessages
+spot_chk createDirectoryStructure
+spot_chk ctxtQNum
+spot_chk decideNextAction
+spot_chk dispMessageIds
+spot_chk ensureUserFileDir
+spot_chk expandPromptTemplate
+spot_chk generateCorpSet
+spot_chk getAllMessages
+spot_chk getCorporateAI
+spot_chk getFileContent
+spot_chk getMessageIds
+spot_chk getSettings
+spot_chk getStats
+spot_chk getTagSet
+spot_chk getUserFileDir
+spot_chk getUserFiles
+spot_chk gptMsgs
+spot_chk handleNaturalLangQuery
+spot_chk loadCorporateAI
+spot_chk loadStats
+spot_chk loadTagSet
+spot_chk oneShot
+spot_chk performLookup
+spot_chk processFileContents
+spot_chk processMessage
+spot_chk readIdentifiedFiles
+spot_chk removeUserFile
+spot_chk renameUserFile
+spot_chk request
+spot_chk resetMessages
+spot_chk saveStats
+spot_chk saveUserFileContent
+spot_chk setCorporateAI
+spot_chk setSettings
+spot_chk setTagSet
+spot_chk sortDeDupMessages
+spot_chk tagMessage
+spot_chk testExpandPromptTemplate
+spot_chk triggerSim
+spot_chk triggerSystem2
+spot_chk updateStats
+if (( spot_chks != spot_passes )); then die "tagts_spot_chk: $((spot_chks - spot_passes)) of $spot_chks spot-checks FAILED!" ; fi
+echo "tagts_spot_chk: all $spot_chks spot_chk's passed"

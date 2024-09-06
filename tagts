@@ -54,31 +54,7 @@ rg() {
       diffo=" (rmvd $diff dup tags; ts_tagger added $((merged_cnt - ctags_cnt)) net tags)"
       fi
    echo "tagts: $merged_cnt tags in merged output $TAGS_FNM_BASE$diffo"
-   local spot_chks=0  # only the paranoid survive!
-   local spot_passes=0  # only the paranoid survive!
-   spot_chk() { spot_chks=$((1+spot_chks)) ; grep -qF "$1" "$TAGS_FNM_BASE" || die "tagts: $1 not found in $TAGS_FNM_BASE" ; spot_passes=$((1+spot_passes)) ;  }
-   spot_chk testExpandPromptTemplate
-   spot_chk expandPromptTemplate
-   spot_chk generateCorpSet
-   spot_chk performLookup
-   spot_chk handleNaturalLangQuery
-   spot_chk request
-   spot_chk ctxtQNum
-   spot_chk decideNextAction
-   spot_chk analyzeAndHandleFileOperations
-   spot_chk processFileContents
-   spot_chk readIdentifiedFiles
-   spot_chk analyzeMessagesForFileOperations
-   spot_chk gptMsgs
-   spot_chk dispMessageIds
-   spot_chk getMessageIds
-   spot_chk sortDeDupMessages
-   spot_chk clearMessages
-   spot_chk addMemoMessage
-   spot_chk addMessage
-   spot_chk addMessageById
-   (( spot_chks == spot_passes )) || die "$((spot_chks - spot_passes)) spot-checks FAILED!"
-   echo "tagts: all $spot_chks spot_chk's passed"
+   if command -v ts_tagger_spot_chk > /dev/null; then ts_tagger_spot_chk "$TAGS_FNM_BASE"; fi
 }
 
 all() { see "${CTAGS_CLI[@]}" --quiet=yes "$@" --recurse ; }
