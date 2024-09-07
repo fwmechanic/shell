@@ -26,6 +26,8 @@
 # integration:
 #   see script `tagts`
 
+#!/usr/bin/env perl
+
 use strict;
 use warnings;
 use File::Spec;
@@ -36,30 +38,27 @@ my $debug = $ENV{DEBUG} // 0;
 
 my $class_pattern = qr/^(?:export\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?/;
 my $method_pattern = qr/^
-    \s*(?:export\s+)?                     # Optional export keyword
-    (?:public|private|protected)?\s*      # Optional access modifier
+    \s*(?:public|private|protected)?\s*   # Optional access modifier
     (?:static\s+)?                        # Optional static keyword
     (?:async\s+)?                         # Optional async keyword
-    (?:function\s+)?                      # Optional function keyword
+    (?!function\b)                        # Negative lookahead for 'function' keyword
     (\w+)                                 # Method name
     (?:<[^>]+>)?                          # Optional generic type parameters
-    \s*(?:\([^)]*\)|\()                   # Parameters (potentially empty or start of multi-line)
-    (?:\s*:\s*(?:Promise<[^>]+>|[^{;]+))? # Optional return type
-    \s*(?:{|$)                            # Opening brace or end of line
-/x;  # Allow comments and whitespace in regex
+    \s*\([^)]*\)\s*                       # Parameters
+    (?::\s*[^{;]+)?                       # Optional return type
+    \s*{                                  # Opening brace
+/x;
 
-# Additional pattern for standalone function declarations
 my $function_pattern = qr/^
     \s*(?:export\s+)?                     # Optional export keyword
     (?:async\s+)?                         # Optional async keyword
-    function\s+                           # 'function' keyword (required for standalone functions)
+    function\s+                           # 'function' keyword
     (\w+)                                 # Function name
     (?:<[^>]+>)?                          # Optional generic type parameters
-    \s*(?:\([^)]*\)|\()                   # Parameters (potentially empty or start of multi-line)
-    (?:\s*:\s*(?:Promise<[^>]+>|[^{;]+))? # Optional return type
-    \s*(?:{|$)                            # Opening brace or end of line
+    \s*\([^)]*\)\s*                       # Parameters
+    (?::\s*[^{;]+)?                       # Optional return type
+    \s*{                                  # Opening brace
 /x;
-
 
 # List of reserved keywords and common function calls to exclude
 my %exclude_words = map { $_ => 1 } qw(
@@ -68,7 +67,7 @@ my %exclude_words = map { $_ => 1 } qw(
     new null return super switch this throw true try typeof var void while with
     as implements interface let package private protected public static yield
     any boolean constructor declare get module require set symbol type from of
-    assert console log warn error
+    assert console log warn error resolve reject
 );
 
 my $tag_count = 0;
@@ -99,6 +98,9 @@ while (my $file = <STDIN>) {
         chomp $line;
         $line_number++;
 
+        # Skip lines that are likely to be within comments
+        next if $line =~ m{^\s*//} or $line =~ m{^\s*/\*} or $line =~ m{\*/\s*$};
+
         if ($line =~ $class_pattern) {
             $current_class = $1;
             my $extends = $2 ? "inherits:$2" : "";
@@ -121,7 +123,5 @@ while (my $file = <STDIN>) {
         }
     }
 
-    close($in_fh);  # Make sure to close the file handle
+    close($in_fh);
 }
-
-# print STDERR "Processed $tag_count tags\n";
