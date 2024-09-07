@@ -17,6 +17,7 @@ TAGS_EXTRAS=+f
 
 TAGS_FNM_BASE=.k_edit_tags
 RAW_TAGS="${TAGS_FNM_BASE}.original"
+TS_TAGGER_UNIQUE_TAGS="${TAGS_FNM_BASE}.ts_tagger_unique"
 
 CTAGS_CLI=(
     ctags
@@ -40,18 +41,22 @@ rg() {
     <.rgfiles "${CTAGS_CLI[@]}" "$@" -L - &
     wait
    )
-   local ctags_cnt tts_cnt merged_cnt
+   local ctags_cnt tts_cnt merged_cnt ts_tagger_unique_tags_cnt uniq_add_cnt
    ctags_cnt="$(<"$RAW_TAGS" wc -l)" tts_cnt="$(<"$ts_tagger_ofnm" wc -l)"
    echo "tagts: $ctags_cnt tags in ctags output; $RAW_TAGS"
    echo "tagts: $tts_cnt tags in ts_tagger output; $ts_tagger_ofnm"
-   cat "$RAW_TAGS" "$ts_tagger_ofnm" | LC_ALL=C sort -u > "$TAGS_FNM_BASE"
+   cat "$RAW_TAGS" "$ts_tagger_ofnm" | LC_ALL=C sort -u | tagts_dedup > "$TAGS_FNM_BASE"
    # ??? grep -vF 'anonymousObject'
    merged_cnt="$(<"$TAGS_FNM_BASE" wc -l)"
-   local diff=$((ctags_cnt + tts_cnt - merged_cnt))
-   local diffo=''
+   grep -vFf "$RAW_TAGS" "$ts_tagger_ofnm" | perl -F'\t' -ane 'print $F[0], "\n"' | LC_ALL=C sort > "$TS_TAGGER_UNIQUE_TAGS"
+   ts_tagger_unique_tags_cnt="$(<"$TS_TAGGER_UNIQUE_TAGS" wc -l)"
+   local diffo='' diff=$((ctags_cnt + tts_cnt - merged_cnt))
    if (( diff > 0 )); then
-    # diffo=" ($diff dup tags removed; $((merged_cnt - ctags_cnt)) net tags added by ts_tagger)"
-      diffo=" (rmvd $diff dup tags; ts_tagger added $((merged_cnt - ctags_cnt)) net tags)"
+      uniq_add_cnt=$((merged_cnt - ctags_cnt))
+      diffo=" (rmvd $diff dup tags; ts_tagger added $uniq_add_cnt unique tags, see $TS_TAGGER_UNIQUE_TAGS"
+      # if (( ts_tagger_unique_tags_cnt != uniq_add_cnt )); then
+      #    die "FAILURE $ts_tagger_unique_tags_cnt == $uniq_add_cnt  $TS_TAGGER_UNIQUE_TAGS"
+      #    fi
       fi
    echo "tagts: $merged_cnt tags in merged output $TAGS_FNM_BASE$diffo"
    if command -v ts_tagger_spot_chk > /dev/null; then ts_tagger_spot_chk "$TAGS_FNM_BASE"; fi
