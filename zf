@@ -4,7 +4,7 @@ die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
 
-dieifnotinpath 7z
+command -v "7z" >/dev/null || die "7z not in PATH; run 'apt install p7zip-full'";
 
 mkdir_or_die() {  # if already exists, do nothing (existing contents not disturbed)
    [[ -d "$1" ]] || mkdir "$1" || die "could not mkdir $1"
@@ -35,7 +35,19 @@ do1file() (
 
    case "$ext" in
       mp3|mp4|m4a|m4b|mpga|ogg)  # degenerate/simple case: create zipfile consisting of dir containing input file
-         see mkdir "$z1dind" && mv "$sanspath" "$z1dind/abook.$ext"    && echo "zf-do1file: z1d setup ok" &&
+         see mkdir "$z1dind" || die "mkdir failed? '$z1dind'"
+         if [[ $sanspath =~ ^[0-9]{8}_[0-9]{6} ]]; then
+            echo "recorder-name preserved"
+            mv "$sanspath" "$z1dind/$sanspath"  || die "zf-do1file: mv failed?"
+            ( cd "$z1dind" && whispercpp_transcribe "$sanspath" )
+         elif [[ ${#sanspath} -lt 70 ]]; then
+            echo "short name preserved"
+            # special case: preserve names of recorder-output files, or short filenames
+            mv "$sanspath" "$z1dind/$sanspath"  || die "zf-do1file: mv failed?"
+         else # avoid the risk of combining looooong filenames with equally looooong directory names
+            echo "long name replaced with 'abook'"
+            mv "$sanspath" "$z1dind/abook.$ext" || die "zf-do1file: mv+rename failed?"
+            fi
          z1d "$z1dind/" && [[ -f "$z1d_of" ]] && [[ -d "$z1d_od" ]] && echo "zf-do1file: z1d successful" &&
          rm -rf "$z1d_od" && mv "$z1d_of" "$zfdout/"                && echo "zf-do1file: z1d cleanup ok"
          return ;;
