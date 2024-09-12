@@ -28,8 +28,7 @@ do1file() (
 
       output_file="$dirname/$basename.16khzwav"
       input_file="$dirname/$basename.$extension"
-
-      see ffmpeg -i "$input_file" -f wav -ar 16000 -ac 1 "$output_file" || die
+      see ffmpeg -hide_banner -y -i "$input_file" -f wav -ar 16000 -ac 1 "$output_file" || die
 
       wav16_in="$output_file"
       fi
