@@ -19,15 +19,18 @@ TAGS_FNM_BASE=.k_edit_tags
 RAW_TAGS="${TAGS_FNM_BASE}.original"
 TS_TAGGER_UNIQUE_TAGS="${TAGS_FNM_BASE}.ts_tagger_unique"
 
-CTAGS_CLI=(
+CTAGS_CLI=( # https://docs.ctags.io/en/latest/man/ctags.1.html
     ctags
     -o "${RAW_TAGS}"          # specify output file
   # --totals=yes              # print statistics about input and output
     --tag-relative=yes        # use paths relative to the tag file
-    --excmd=number            # use line numbers instead of search patterns
+    --excmd=number            # what's in the `excmd` field: [line] number(s), ex-pattern, or combined (both?) or 'mixed' (either?)
+                              # here need to stick with "number" because "pattern"'s unpredictability will make de-dup'ing vs ts_tagger output impossible.
     --fields="$TAGS_FIELDS"   # specify extra fields to include in output
     --extras="$TAGS_EXTRAS"   # include extra tag entries
     --links=no                # don't follow symlinks
+                              # "-<lang>" means ignore that language's source files
+    --languages=-Markdown,-JSON,-Man,-HTML,-Asciidoc,-Autoconf,-Automake,-CSS
   # --verbose                 # print debug messages
 )
 
@@ -37,8 +40,8 @@ rg() {
    local ts_tagger_ofnm="ts_tags.txt"
    command rg --files > .rgfiles
    ( # run the following two commands in parallel and wait for both to complete
-    grep '\.ts$' .rgfiles | ts_tagger > "$ts_tagger_ofnm"  &
-    <.rgfiles "${CTAGS_CLI[@]}" "$@" -L - &
+    grep '\.ts$' .rgfiles | ts_tagger | LC_ALL=C sort > "$ts_tagger_ofnm"  &
+    "${CTAGS_CLI[@]}" -L .rgfiles "$@" &
     wait
    )
    local ctags_cnt tts_cnt merged_cnt ts_tagger_unique_tags_cnt uniq_add_cnt
