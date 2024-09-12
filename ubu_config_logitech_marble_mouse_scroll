@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+cfgfnm="/etc/X11/xorg.conf.d/40-marble-mouse.conf"
+[[ -f "$cfgfnm" ]] && die "file exists: $cfgfnm"
+
+# config to use the LEFT "small/upper" button as shift-for-ball-scrolling
+see sudo >"$cfgfnm" cat '
+Section "InputClass"
+        Identifier      "Logitech Marble Mouse"
+        MatchProduct    "Logitech USB Trackball"
+        MatchDevicePath "/dev/input/event*"
+        Driver          "libinput"
+        Option          "ScrollMethod" "button"
+        Option          "ScrollButton" "8"
+        Option          "MiddleEmulation" "true"
+EndSection'
