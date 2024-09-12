@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+xinput_dev_name="Logitech USB Trackball"
+xinput list "$xinput_dev_name" > /dev/null || die
+xinput set-prop "$xinput_dev_name" "libinput Scroll Method Enabled" 0, 0, 1
+xinput set-prop "$xinput_dev_name" "libinput Button Scrolling Button" 8
