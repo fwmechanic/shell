@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# examples
+# 7zwrap -y e *.zip
+
+command -v "7z" >/dev/null || die "7z not in PATH; run 'apt install p7zip-full'";
+
+# Function to print usage
+usage() {
+    echo "Usage: $0 <7z_command> [7z_options] <archive_file1> [archive_file2] ..."
+    echo "Example: $0 x -j foo.rar bar.zip"
+    exit 1
+}
+
+# Check if at least two arguments are provided (7z command and at least one file)
+if [ $# -lt 2 ]; then
+    usage
+fi
+
+# Initialize arrays
+options=()
+files=()
+command=$1
+shift
+
+# Parse arguments
+for arg in "$@"; do
+    if [ ${#files[@]} -eq 0 ]; then
+        if [ -f "$arg" ]; then
+            files+=("$arg")
+        else
+            options+=("$arg")
+        fi
+    else
+        if [ -f "$arg" ]; then
+            files+=("$arg")
+        elif [ -d "$arg" ]; then
+            echo "Warning: Directory '$arg' ignored." >&2
+        else
+            echo "Error: '$arg' is not a valid file." >&2
+            exit 1
+        fi
+    fi
+done
+
+# Check if we have any files to process
+if [ ${#files[@]} -eq 0 ]; then
+    echo "Error: No valid archive files specified."
+    usage
+fi
+
+# Function to process a single file
+process_file() {
+    local file="$1"
+    local out_file="${file}.out"
+    local err_file="${file}.err"
+
+    echo "Processing: $file"
+    if 7z "$command" "${options[@]}" "$file" > "$out_file" 2> "$err_file"; then
+        echo "Successfully processed $file"
+        rm "$out_file" "$err_file"
+        # move processed files to a '_consumed' directory
+        mkdir -p _consumed
+        mv "$file" _consumed/
+    else
+        echo "Error processing $file" >&2
+    fi
+    echo
+}
+
+# Process each file
+for file in "${files[@]}"; do
+    process_file "$file"
+done
