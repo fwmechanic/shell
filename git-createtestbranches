@@ -1,0 +1,50 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+# Script to create test branches for git-brclean testing
+# Creates a mix of local and remote branches with varying timestamps
+
+# Configuration
+my $remote = 'origin';  # default remote name
+my $prefix = 'test-branch';
+my $num_branches = 10;
+
+# Get current branch name to return to it later
+chomp(my $original_branch = `git rev-parse --abbrev-ref HEAD`);
+die "Failed to get current branch name\n" unless $original_branch;
+
+# Create some local branches
+for my $i (1..$num_branches) {
+    my $branch_name = sprintf("%s-%03d", $prefix, $i);
+
+    # Create branch
+    system('git', 'checkout', '-b', $branch_name) == 0
+        or die "Failed to create branch $branch_name\n";
+
+    # Make a commit to give it a unique timestamp
+    open(my $fh, '>', "test_file_$i.txt") or die "Cannot create file: $!\n";
+    print $fh "Test content for branch $branch_name\n";
+    close $fh;
+
+    system('git', 'add', "test_file_$i.txt") == 0
+        or die "Failed to add file in branch $branch_name\n";
+    system('git', 'commit', '-m', "Test commit for $branch_name") == 0
+        or die "Failed to commit in branch $branch_name\n";
+
+    # For every other branch, push to remote
+    if ($i % 2 == 0) {
+        system('git', 'push', '-u', $remote, $branch_name) == 0
+            or die "Failed to push branch $branch_name\n";
+    }
+
+    # Small delay to ensure different timestamps
+    sleep 1;
+}
+
+# Return to original branch
+system('git', 'checkout', $original_branch) == 0
+    or die "Failed to return to $original_branch branch\n";
+
+print "\nCreated test branches:\n";
+system('git', 'brt');
