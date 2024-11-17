@@ -4,35 +4,62 @@ die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" )
 dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
 
-whispercpp_dnm="$HOME/my/oss_builds/whisper.cpp-1.6.2"
-whispermain="$whispercpp_dnm/main"
-threads=12
-model="ggml-medium.en-q5_0.bin"
-modelabs="$whispercpp_dnm/models/$model"
+whisper_base="$HOME/my/oss_builds"  # !!! host specific
 
+# Function to find newest whisper version
+find_newest_whisper() {
+    local base_dir="$1"
+    local newest_ver=""
+
+    # Find all matching directories and extract versions
+    while IFS= read -r dir; do
+        # Extract just the version number from directory name
+        if [[ $dir =~ whisper\.cpp-([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            ver="${BASH_REMATCH[1]}"
+            # Compare versions using sort -V (version sort)
+            if [ -z "$newest_ver" ] || [ "$(printf '%s\n' "$ver" "$newest_ver" | sort -V | tail -n1)" = "$ver" ]; then
+                newest_ver="$ver"
+            fi
+        fi
+    done < <(find "$base_dir" -maxdepth 1 -type d -name 'whisper.cpp-[0-9]*.[0-9]*.[0-9]*')
+
+    echo "$newest_ver"
+}
+
+# Find newest version if available, otherwise use default
+auto_version=$(find_newest_whisper "$whisper_base")
+test -n "$auto_version" || die "find_newest_whisper found no matches"
+echo "newest installed version: $auto_version"
+whisper_version="${WHISPER_VERSION:-$auto_version}"  # Allow override via environment or command line
+echo "version we'll use: $whisper_version"
+
+WHISPER_OPTS=()  # empty array for extra whisper options
+# If WHISPER_EXTRA is set, split it into array (respecting quotes)
+if [ -n "$WHISPER_EXTRA" ]; then
+   eval "WHISPER_OPTS=($WHISPER_EXTRA)"  # Use eval to properly handle quoted arguments
+   fi
+
+whispercpp_dnm="$whisper_base/whisper.cpp-$whisper_version"
+test -d "$whispercpp_dnm" || die "Whisper version directory not found: $whispercpp_dnm"
+whispermain="$whispercpp_dnm/main"
 test -x "$whispermain" || die "not an executable file: $whispermain"
-test -f "$1" || die "not a file: $1"
+
+threads=12
+
+# Read model from dflt_model file
+model_file="$whispercpp_dnm/dflt_model"
+test -f "$model_file" || die "$model_file does not exist"
+read -r model < "$model_file"
+# Trim any whitespace that might exist
+# model="$(echo "$model" | tr -d '[:space:]')"
+test -n "$model" || die "$model_file is empty?"
+modelabs="$whispercpp_dnm/models/$model"
 test -f "$modelabs" || die "not a file: $modelabs"
 
 is_16khzwav() { ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,sample_rate -of csv=p=0 "$1" | grep -q 'pcm_s16le,16000' ; }
 
 do1file() (
-   if is_16khzwav "$1"; then
-      wav16_in="$1"
-   else
-      fullname="$1"
-      dirname="$(dirname -- "${fullname}")"     ; echo "dirname   $dirname"
-      filename="$(basename -- "${fullname}")"   ; echo "filename  $filename"
-      extension="${filename##*.}"               ; echo "extension $extension"
-      basename="${filename%.*}"                 ; echo "basename  $basename"
-
-      output_file="$dirname/$basename.16khzwav"
-      input_file="$dirname/$basename.$extension"
-      see ffmpeg -hide_banner -y -i "$input_file" -f wav -ar 16000 -ac 1 "$output_file" || die
-
-      wav16_in="$output_file"
-      fi
-
+   test -f "$1" || die "not a file: $1"
    # of=output filename; extensionless version of $1; whisper will append ".lrc" to it
    fullname="$1"
    dirname="$(dirname -- "${fullname}")"     ; echo "dirname   $dirname"
@@ -40,8 +67,22 @@ do1file() (
    extension="${filename##*.}"               ; echo "extension $extension"
    basename="${filename%.*}"                 ; echo "basename  $basename"
    of="$dirname/$basename" # whisper will append ".lrc"
+   if test -f "${of}.lrc"; then
+      echo "output file exists: ${of}.lrc"
+      exit 0
+      fi
 
-   see "$whispermain" -t "$threads" -np -pp  -m "$modelabs" -f "$wav16_in" -olrc -of "$of"
+   if is_16khzwav "$1"; then
+      wav16_in="$1"
+   else
+      output_file="$dirname/$basename.16khzwav"
+      input_file="$dirname/$basename.$extension"
+      see ffmpeg -hide_banner -y -i "$input_file" -f wav -ar 16000 -ac 1 "$output_file" || die
+
+      wav16_in="$output_file"
+      fi
+
+   see "$whispermain" -t "$threads" -np -pp -m "$modelabs" -f "$wav16_in" "${WHISPER_OPTS[@]}" -olrc -of "$of"
    if [ "$wav16_in" != "$1" ]; then
       see rm "$wav16_in"
       fi
