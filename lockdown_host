@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# <Debian/Gnome-based distro version>
+# silence and lock a Linux host (w/o shutting it down)
+# basically, eliminate any source of human annoyance:
+# * screen illumination
+# * speaker noise
+# * bluetooth devices remaining connected
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+
+dieifnotinpath pactl
+dieifnotinpath rfkill
+dieifnotinpath xset
+dieifnotinpath dbus-send
+
+# Function to log messages
+log_message() {
+    echo "$(date '+%Y%m%d_%H%M%S') $1"
+}
+
+# Function to check if a command was successful
+check_status() {
+    if [ $? -eq 0 ]; then
+        log_message "$1 successful"
+    else
+        log_message "ERROR: $1 failed"
+    fi
+}
+
+# 1. Mute all sound output
+log_message "Muting audio..."
+pactl set-sink-mute @DEFAULT_SINK@ 1
+check_status "Audio muting"
+
+# Get current volume for logging
+current_volume=$(pactl get-sink-volume @DEFAULT_SINK@ | grep -Po '\d+(?=%)' | head -1)
+log_message "Current volume: $current_volume%"
+
+# https://linuxconfig.org/how-to-manage-wifi-interfaces-with-rfkill-command-on-linux
+#
+# A wireless interface can be subject of two type of blocks: software and
+# hardware.  The "hard" block status cannot be changed via software, and is
+# typically a block performed by an hardware switch, or implemented via the
+# machine firmware in specific situations: on some machines, for example,
+# it's possible to disable the wifi interface when a LAN cable is connected.
+#
+# A "soft" block, instead, is performed via software, and we can set its
+# status by using rfkill:
+#
+bt_count="$(rfkill -nro TYPE | grep -cP '^bluetooth\b')"
+if ((bt_count == 0)); then
+   log_message "No bluetooth devices found"
+else
+   log_message "$bt_count bluetooth devices found, attempting to soft-block all"
+   see rfkill block bluetooth   # attempt to soft-block all bluetooth interfaces
+   if rfkill -nro TYPE,SOFT,DEVICE | grep -P '^bluetooth\s+unblocked\b'; then
+       log_message "WARNING: above-listed bluetooth devices remain unblocked (possibly active)"
+   else
+       log_message "all bluetooth devices are blocked"
+   fi
+fi
+
+# Turn off the screen
+log_message "Turning off screen in 10 seconds..."
+sleep 10
+
+# First try DPMS
+see xset dpms force off
+check_status "Screen DPMS off"
+
+# Alternative method using backlight
+if [ -d "/sys/class/backlight" ]; then
+    for backlight in /sys/class/backlight/*; do
+        if [ -w "$backlight/brightness" ]; then
+            echo 0 > "$backlight/brightness"
+        fi
+    done
+    check_status "Backlight control"
+fi
+
+# 4. Lock the host
+see dbus-send --type=method_call --dest=org.gnome.ScreenSaver /org/gnome/ScreenSaver org.gnome.ScreenSaver.Lock
+check_status "Screen locking"
+
+# Final status message
+log_message "System lockdown complete"
