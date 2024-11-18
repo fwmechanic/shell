@@ -1,0 +1,111 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use JSON::PP;
+use File::Spec;
+use Data::Dumper;
+
+# Configuration
+my @CONFIG_FILES = (
+    { name => 'package.json', focus_keys => ['dependencies', 'devDependencies', 'scripts'] },
+    { name => 'tsconfig.json', focus_keys => ['compilerOptions', 'include', 'exclude'] },
+    { name => '.eslintrc.json', focus_keys => [] },
+    { name => '.prettierrc', focus_keys => [] },
+);
+
+# Check command line arguments
+if (@ARGV != 2) {
+    die "Usage: $0 <project1_dir> <project2_dir>\n";
+}
+
+my ($project1, $project2) = @ARGV;
+
+# JSON parser
+my $json = JSON::PP->new->canonical(1);
+
+sub read_json_file {
+    my ($file) = @_;
+    open my $fh, '<', $file or die "Cannot open $file: $!";
+    local $/;
+    my $content = <$fh>;
+    return $json->decode($content);
+}
+
+sub filter_json {
+    my ($data, $keys) = @_;
+    return $data unless @$keys;
+    return { map { $_ => $data->{$_} } grep { exists $data->{$_} } @$keys };
+}
+
+sub print_diff {
+    my ($v1, $v2, $indent) = @_;
+    $indent //= 0;
+    my $space = "  " x $indent;
+
+    if (ref $v1 eq 'HASH' && ref $v2 eq 'HASH') {
+        my %keys = map { $_ => 1 } (keys %$v1, keys %$v2);
+        for my $k (sort keys %keys) {
+            if (!exists $v1->{$k}) {
+                print "${space}+ $k: ", $json->encode($v2->{$k}), "\n";
+            } elsif (!exists $v2->{$k}) {
+                print "${space}- $k: ", $json->encode($v1->{$k}), "\n";
+            } elsif ($v1->{$k} ne $v2->{$k}) {
+                print "${space}~ $k\n";
+                print_diff($v1->{$k}, $v2->{$k}, $indent + 1);
+            }
+        }
+    } elsif (ref $v1 eq 'ARRAY' && ref $v2 eq 'ARRAY') {
+        my $max = $#$v1 > $#$v2 ? $#$v1 : $#$v2;
+        for my $i (0..$max) {
+            if ($i > $#$v1) {
+                print "${space}+ ", $json->encode($v2->[$i]), "\n";
+            } elsif ($i > $#$v2) {
+                print "${space}- ", $json->encode($v1->[$i]), "\n";
+            } elsif ($v1->[$i] ne $v2->[$i]) {
+                print "${space}[$i]\n";
+                print_diff($v1->[$i], $v2->[$i], $indent + 1);
+            }
+        }
+    } elsif ($v1 ne $v2) {
+        print "${space}- ", $json->encode($v1), "\n";
+        print "${space}+ ", $json->encode($v2), "\n";
+    }
+}
+
+sub compare_files {
+    my ($dir1, $dir2, $filename, $focus_keys) = @_;
+    my $file1 = File::Spec->catfile($dir1, $filename);
+    my $file2 = File::Spec->catfile($dir2, $filename);
+
+    my $json1 = eval { read_json_file($file1) };
+    my $json2 = eval { read_json_file($file2) };
+
+    if ($@ || !$json1 || !$json2) {
+        print "Error reading $filename\n";
+        return;
+    }
+
+    my $filtered1 = filter_json($json1, $focus_keys);
+    my $filtered2 = filter_json($json2, $focus_keys);
+
+    if ($json->encode($filtered1) ne $json->encode($filtered2)) {
+        print "\nDifferences in $filename:\n";
+        print "Focusing on keys: ", join(', ', @$focus_keys), "\n" if @$focus_keys;
+        print_diff($filtered1, $filtered2);
+    } else {
+        print "\n$filename: No differences", (@$focus_keys ? " for the specified keys" : ""), "\n";
+    }
+}
+
+sub compare_projects {
+    my ($dir1, $dir2) = @_;
+    print "Comparing TypeScript project configurations:\n";
+    print "  Project 1: $dir1\n";
+    print "  Project 2: $dir2\n";
+
+    for my $config (@CONFIG_FILES) {
+        compare_files($dir1, $dir2, $config->{name}, $config->{focus_keys});
+    }
+}
+
+compare_projects($project1, $project2);

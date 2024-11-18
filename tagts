@@ -28,6 +28,7 @@ CTAGS_CLI=( # https://docs.ctags.io/en/latest/man/ctags.1.html
                               # here need to stick with "number" because "pattern"'s unpredictability will make de-dup'ing vs ts_tagger output impossible.
     --fields="$TAGS_FIELDS"   # specify extra fields to include in output
     --extras="$TAGS_EXTRAS"   # include extra tag entries
+    --langmap=typescript:.ts.tsx  # treat .tsx files as ts=typescript
     --links=no                # don't follow symlinks
                               # "-<lang>" means ignore that language's source files
     --languages=-Markdown,-JSON,-Man,-HTML,-Asciidoc,-Autoconf,-Automake,-CSS
@@ -37,11 +38,32 @@ CTAGS_CLI=( # https://docs.ctags.io/en/latest/man/ctags.1.html
 #                          | tee /dev/stderr
 #
 rg() {
-   local ts_tagger_ofnm="ts_tags.txt"
-   command rg --files > .rgfiles
+   local ts_tagger_ofnm="${TAGS_FNM_BASE}_ts_tags.txt" files="${TAGS_FNM_BASE}_files"
+   command rg --files > "$files"
+   addTsOnly() {
+      if [[ -d "$1" ]]; then
+         echo "adding $1"
+         find "$1" -type f -name '*.ts' ! -name '*.d.ts' >> "$files"
+         fi
+      }
+   addAnyTs() {
+      if [[ -d "$1" ]]; then
+         echo "adding $1"
+         find "$1" -type f \( -name '*.ts' \) >> "$files"
+         fi
+      }
+   addAnyTsJs() {
+      if [[ -d "$1" ]]; then
+         echo "adding $1"
+         find "$1" -type f \( -name '*.ts' -o -name '*.js' \) >> "$files"
+         fi
+      }
+   addTsOnly   'node_modules/openai/'
+   addAnyTsJs  'node_modules/@openai/'
+   addAnyTs    'node_modules/@anthropic-ai/sdk/'
    ( # run the following two commands in parallel and wait for both to complete
-    grep '\.ts$' .rgfiles | ts_tagger | LC_ALL=C sort > "$ts_tagger_ofnm"  &
-    "${CTAGS_CLI[@]}" -L .rgfiles "$@" &
+    grep -P '\.tsx?$' "$files" | ts_tagger | LC_ALL=C sort > "$ts_tagger_ofnm"  &
+    "${CTAGS_CLI[@]}" -L "$files" "$@" 2>&1 | grep -vF 'ctags: Notice: ignoring null tag' &
     wait
    )
    local ctags_cnt tts_cnt merged_cnt ts_tagger_unique_tags_cnt uniq_add_cnt

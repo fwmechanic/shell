@@ -1,0 +1,141 @@
+#!/usr/bin/env perl
+
+# purpose/use-case:
+#
+# It frequently happens that after pushing changes to a shared remote branch
+# (e.g. main/master) I forget to switch back to my $dev_branch before resuming
+# dev work, resulting in commits to local shared branch which should have been
+# committed to my $dev_branch *atop* local shared branch.
+#
+# This program will automatically fix this situation.
+# If the following preconditions
+# 1. $current_branch has a remote-tracking peer from which it has diverged.
+# 2. A non-remote-tracked $dev_branch is at the same commit as $current_branch's remote-tracking peer.
+# are present, take action:
+# 1. move $dev_branch to the current commit.
+# 2. switch to $dev_branch
+# 3. move/reset $current_branch to match its remote-tracking peer.
+#
+# Optional behavior: supply on the cmdline a $specified_branch to be used as $dev_branch.
+
+use strict;
+use warnings;
+
+die "Usage: $0 [branchname]\n" if @ARGV > 1;
+my $specified_branch = $ARGV[0];  # undef if no args
+
+# Get the current branch name
+my $current_branch = `git rev-parse --abbrev-ref HEAD`;
+chomp $current_branch;
+
+# Get the remote tracking branch for current branch
+my $remote_tracking = `git rev-parse --abbrev-ref $current_branch\@{upstream} 2>/dev/null`;
+chomp $remote_tracking;
+
+if ($? != 0) {
+    die "Current branch '$current_branch' has no upstream branch\n";
+}
+
+# Get the commit hash of remote tracking branch
+my $remote_commit = `git rev-parse $remote_tracking`;
+chomp $remote_commit;
+
+# Get the current commit hash
+my $current_commit = `git rev-parse HEAD`;
+chomp $current_commit;
+
+# Verify current branch is ahead of remote
+if ($current_commit eq $remote_commit) {
+    die "Current branch is not ahead of remote tracking branch\n";
+}
+
+my $dev_branch;
+
+if ($specified_branch) {
+    $dev_branch = $specified_branch;
+
+    # Check if specified branch exists
+    my $branch_exists = system("git show-ref --verify --quiet refs/heads/$dev_branch") == 0;
+
+    if ($branch_exists) {
+        # If branch exists, verify it's not the current branch
+        if ($dev_branch eq $current_branch) {
+            die "Specified branch '$dev_branch' is the current branch\n";
+        }
+
+        # Get the commit hash of specified branch
+        my $specified_commit = `git rev-parse $dev_branch`;
+        chomp $specified_commit;
+
+        # Warn if specified branch isn't at remote commit
+        if ($specified_commit ne $remote_commit) {
+            print "\nWarning: Specified branch '$dev_branch' is not at the remote tracking commit.\n";
+            print "Remote tracking commit: $remote_commit\n";
+            print "Specified branch commit: $specified_commit\n";
+            print "Continue anyway? (y/n): ";
+            my $confirm = <STDIN>;
+            chomp $confirm;
+            die "Aborted\n" unless $confirm eq 'y';
+        }
+    } else {
+        print "\nNote: Branch '$dev_branch' doesn't exist and will be created.\n";
+    }
+} else {
+    # Get all local branches that point to the remote tracking commit
+    my @matching_branches = split /\n/, `git branch --points-at $remote_commit`;
+    @matching_branches = map { s/^\s*\*?\s*//r } @matching_branches;  # Clean branch names
+    @matching_branches = grep { $_ ne $current_branch } @matching_branches;  # Remove current branch
+
+    if (!@matching_branches) {
+        die "No local branches found at remote tracking commit $remote_commit\n" .
+            "Please specify a branch name as an argument\n";
+    }
+
+    # If multiple branches match, let user choose
+    if (@matching_branches > 1) {
+        print "Multiple branches found at remote commit:\n";
+        for (my $i = 0; $i < @matching_branches; $i++) {
+            print "$i: $matching_branches[$i]\n";
+        }
+        print "Enter number of branch to use (Ctrl-C to abort): ";
+        my $choice = <STDIN>;
+        chomp $choice;
+        if ($choice !~ /^\d+$/ || $choice >= @matching_branches) {
+            die "Invalid choice\n";
+        }
+        $dev_branch = $matching_branches[$choice];
+    } else {
+        $dev_branch = $matching_branches[0];
+    }
+}
+
+# Show the current state
+print "\nBEFORE: HEAD -> $remote_tracking (inclusive):\n";
+system("git log --oneline --decorate --graph HEAD ^$remote_tracking^");
+
+# Confirm with user
+print "\nWill perform the following branch pointer movements:\n";
+print "1. Point '$dev_branch' at current commit ($current_commit)\n";
+print "2. Switch to '$dev_branch'\n";
+print "3. Point '$current_branch' at $remote_tracking ($remote_commit)\n";
+print "\nProceed? (y/n): ";
+my $confirm = <STDIN>;
+chomp $confirm;
+die "Aborted\n" unless $confirm eq 'y';
+
+# Perform the operations
+system("git branch -f $dev_branch $current_commit") == 0
+    or die "Failed to move $dev_branch pointer\n";
+system("git checkout $dev_branch") == 0
+    or die "Failed to switch to $dev_branch\n";
+system("git branch -f $current_branch $remote_tracking") == 0
+    or die "Failed to move $current_branch pointer\n";
+
+print "\nSuccess!\n";
+# print "Current branch: $dev_branch\n";
+# print "$dev_branch now points to: $current_commit\n";
+# print "$current_branch now points to: $remote_commit\n";
+
+# Show the final state
+print "\nAFTER: HEAD -> $remote_tracking (inclusive):\n";
+system("git log --oneline --decorate --graph HEAD ^$remote_tracking^");

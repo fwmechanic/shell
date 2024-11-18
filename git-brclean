@@ -1,0 +1,177 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Getopt::Long;
+use Term::ReadKey;  # for better input handling
+
+my $dry_run = 0;
+my $debug = 0;
+
+GetOptions(
+    "dry-run|n" => \$dry_run,
+    "debug|d"   => \$debug
+) or die "Error in command line arguments\n";
+
+# Input handling functions
+sub get_number_input {
+    my ($prompt, $max) = @_;
+
+    # Clear any leftover input
+    while (Term::ReadKey::ReadKey(-1)) {}  # non-blocking read to clear buffer
+
+    print "\n$prompt";
+    my $input = <STDIN>;
+    print "Debug: input received, raw length: ", length($input // ''), "\n" if $debug;
+    chomp $input;
+    print "You entered: '$input'\n" if $debug;
+
+    return undef unless defined($input) && length($input);
+    return undef unless $input =~ /^\d+$/ && $input > 0 && $input <= $max;
+    return $input;
+}
+
+sub get_yes_no {
+    my ($prompt) = @_;
+
+    print "$prompt";
+    # Clear any leftover input
+    while (Term::ReadKey::ReadKey(-1)) {}
+    my $confirm = lc(ReadKey(0));
+    print "You entered: '$confirm'\n" if $debug;
+    print "$confirm\n";
+
+    # Clear any remaining input after confirmation
+    while (Term::ReadKey::ReadKey(-1)) {}
+
+    return $confirm eq 'y';
+}
+
+sub pause_for_enter {
+    print "Press Enter to continue...";
+    # Clear any leftover input
+    while (Term::ReadKey::ReadKey(-1)) {}
+    my $pause = <STDIN>;
+    print "Debug: pause received, raw length: ", length($pause // ''), "\n" if $debug;
+    chomp $pause;
+    print "You entered for pause: '$pause'\n" if $debug;
+}
+
+# Check if brt command exists
+system('git config --get-regexp \'^alias\.brt\' >/dev/null 2>&1') == 0
+    or system('which git-brt >/dev/null 2>&1') == 0
+    or die "Error: git brt command not found. Please define the alias:\n\n" .
+        "    git config --global alias.brt 'branch -a --format=\"%(committerdate:format:%Y%m%d_%H%M%S) %(refname:short)\" | sort -r'\n\n";
+
+# Get list of remotes and sync remote-tracking branches
+my @remotes = `git remote`;
+chomp @remotes;
+die "No remotes configured!\n" unless @remotes;
+
+print "Syncing remote-tracking branches:\n";
+foreach my $remote (@remotes) {
+    print "  Pruning $remote... ";
+    if ($dry_run) {
+        print "DRY RUN - would execute: git remote prune --dry-run $remote\n";
+        system('git', 'remote', 'prune', '--dry-run', $remote);
+    } else {
+        system('git', 'remote', 'prune', $remote) == 0
+            or warn "Failed to prune $remote\n";
+        print "done\n";
+    }
+}
+print "\n";
+
+# Get current branch name
+chomp(my $current_branch = `git rev-parse --abbrev-ref HEAD`);
+die "Failed to get current branch name\n" unless $current_branch;
+
+my @protected_branches = ('HEAD', 'main', 'master', 'develop', $current_branch);
+print "Protected branches (including current branch '$current_branch'): @protected_branches\n" if $debug;
+
+while (1) {
+    # Get fresh branch list and detect remotes
+    my @branches = `git brt`;
+    chomp @branches;
+
+    # Convert timestamp-prefixed branches to branch-only format for processing
+    my @branch_names = map { /^\d{8}_\d{6}\s+(.+)$/; $1 } @branches;
+
+    my %remotes = map { (split m{/}, $_)[0] => 1 }
+                 grep { m{/} } @branch_names;
+
+    die "No remote branches found!\n" unless %remotes;
+
+    # Build regex to exclude protected branches
+    my $protected_re = join '|',
+        @protected_branches,                              # local branches
+        (map { my $r = $_; map { "$r/$_" } @protected_branches } keys %remotes);  # remote branches
+
+    print "Protected branches regex: $protected_re\n" if $debug;
+
+    # Filter out protected branches but keep original format for display
+    my @available_branches = grep {
+        my ($branch) = /^\d{8}_\d{6}\s+(.+)$/;
+        $branch !~ /$protected_re/;
+    } @branches;
+
+    # Show available branches
+    my $num_width = length(scalar @available_branches);  # width needed for highest number
+    printf "\nAvailable branches for deletion:\n";
+    printf "    %${num_width}s  Branch Info (timestamp branch_name)\n", '#';
+    printf "    %${num_width}s  -------------------------------\n", '-' x $num_width;
+    for my $i (0 .. $#available_branches) {
+        printf "    %${num_width}d: %s\n", $i + 1, $available_branches[$i];
+    }
+
+    my $input = get_number_input("Enter branch number to delete, or empty to exit: ", scalar @available_branches);
+    exit unless defined $input;
+
+    # If input is invalid, show error and continue
+    unless ($input > 0 && $input <= @available_branches) {
+        print "Invalid selection. Please enter a number between 1 and ", scalar @available_branches, "\n";
+        pause_for_enter();
+        next;
+    }
+
+    my $idx = $input - 1;
+    my ($branch) = $available_branches[$idx] =~ /^\d{8}_\d{6}\s+(.+)$/;
+
+    if ($branch =~ m{^([^/]+)/(.+)$}) {
+        my ($remote, $branch_name) = ($1, $2);
+        my @cmd = ('git', 'push', $remote, '--delete', $branch_name);
+        print "\nRemote branch: $branch_name from $remote\n";
+        print "Command: @cmd\n";
+
+        if ($dry_run) {
+            print "DRY RUN: Would execute above command\n";
+            next;
+        }
+
+        next unless get_yes_no("Execute this command? (y/N) ");
+
+        if (system(@cmd) != 0) {
+            print "Remote branch deletion failed. Attempting to remove local remote-tracking reference...\n";
+            my @cleanup_cmd = ('git', 'branch', '-dr', "$remote/$branch_name");
+            system(@cleanup_cmd) == 0
+                or warn "Failed to delete branch $branch\n";
+        }
+    } else {
+        my @cmd = ('git', 'branch', '-D', $branch);
+        print "\nLocal branch: $branch\n";
+        print "Command: @cmd\n";
+
+        if ($dry_run) {
+            print "DRY RUN: Would execute above command\n";
+            next;
+        }
+
+        next unless get_yes_no("Execute this command? (y/N) ");
+
+        system(@cmd) == 0
+            or warn "Failed to delete branch $branch\n";
+    }
+
+    print "\n";
+}
+
+print "\nDone.\n";
