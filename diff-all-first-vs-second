@@ -1,0 +1,19 @@
+#!/bin/bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+# nonrecursive!!!
+
+src="$1"
+other="$2"  ; test -n "$other" || die "need 2 dirname arguments: lead, other; only files in lead will be diffd"
+
+for file in "$src"*; do
+    if [ -f "$file" ]; then
+        filename=$(basename "$file")
+        # echo "Comparing $filename:"  # diff --help
+        if diff -U0 "$file" "$other/$filename"; then
+           echo "same: $file $other/$filename"
+        fi
+    fi
+done
