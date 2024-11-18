@@ -3,17 +3,19 @@
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" )
 
+# diff all files in first ($1) against their counterpart in second ($2).  Files that exist only in second are ignored.
 # nonrecursive!!!
 
-src="$1"
-other="$2"  ; test -n "$other" || die "need 2 dirname arguments: lead, other; only files in lead will be diffd"
+[ $# -eq 2 ]                    || die "need 2 arguments: both dirnames"
+first="$1"  ; test -d "$first"  || die "first dirname argument is not a dir: $first"
+second="$2" ; test -n "$second" || die "second dirname argument is not a dir: $second"
 
-for file in "$src"*; do
+for file in "$first"*; do
     if [ -f "$file" ]; then
         filename=$(basename "$file")
         # echo "Comparing $filename:"  # diff --help
-        if diff -U0 "$file" "$other/$filename"; then
-           echo "same: $file $other/$filename"
+        if diff -U0 "$file" "$second/$filename"; then
+           echo "same: $file $second/$filename"
         fi
     fi
 done

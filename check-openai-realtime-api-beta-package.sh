@@ -43,3 +43,4 @@ fi
 # Display the result
 echo "? Update available: $PACKAGE_NAME is $COMMITS_BEHIND commit(s) behind."
 echo "to upgrade, run: yarn upgrade @openai/realtime-api-beta"
+echo "commits: https://github.com/openai/openai-realtime-api-beta/commits/main/"
