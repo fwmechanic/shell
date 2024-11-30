@@ -16,6 +16,8 @@ dieifnotinpath rfkill
 dieifnotinpath xset
 dieifnotinpath dbus-send
 
+aeropex_mac='20:74:CF:BE:98:96'
+
 # Function to log messages
 log_message() {
     echo "$(date '+%Y%m%d_%H%M%S') $1"
@@ -32,12 +34,12 @@ check_status() {
 
 # 1. Mute all sound output
 log_message "Muting audio..."
-pactl set-sink-mute @DEFAULT_SINK@ 1
-check_status "Audio muting"
+see pactl set-sink-mute @DEFAULT_SINK@ 1 && echo ok
 
 # Get current volume for logging
 current_volume=$(pactl get-sink-volume @DEFAULT_SINK@ | grep -Po '\d+(?=%)' | head -1)
 log_message "Current volume: $current_volume%"
+
 
 # https://linuxconfig.org/how-to-manage-wifi-interfaces-with-rfkill-command-on-linux
 #
@@ -50,28 +52,42 @@ log_message "Current volume: $current_volume%"
 # A "soft" block, instead, is performed via software, and we can set its
 # status by using rfkill:
 #
-bt_count="$(rfkill -nro TYPE | grep -cP '^bluetooth\b')"
-if ((bt_count == 0)); then
-   log_message "No bluetooth devices found"
-else
-   log_message "$bt_count bluetooth devices found, attempting to soft-block all"
-   see rfkill block bluetooth   # attempt to soft-block all bluetooth interfaces
-   if rfkill -nro TYPE,SOFT,DEVICE | grep -P '^bluetooth\s+unblocked\b'; then
-       log_message "WARNING: above-listed bluetooth devices remain unblocked (possibly active)"
+if false; then  # because I now have a BT keyboard (which I need to have connected to login post-lockdown)
+   bt_count="$(rfkill -nro TYPE | grep -cP '^bluetooth\b')"
+   if ((bt_count == 0)); then
+      log_message "No bluetooth devices found"
    else
-       log_message "all bluetooth devices are blocked"
+      log_message "$bt_count bluetooth devices found, attempting to soft-block all"
+      see rfkill block bluetooth   # attempt to soft-block all bluetooth interfaces
+      if rfkill -nro TYPE,SOFT,DEVICE | grep -P '^bluetooth\s+unblocked\b'; then
+          log_message "WARNING: above-listed bluetooth devices remain unblocked (possibly active)"
+      else
+          log_message "all bluetooth devices are blocked"
+      fi
    fi
+else  # just disconnect a specific device, aeropex_mac
+   see bluetoothctl disconnect "$aeropex_mac" && echo ok
 fi
 
 # Turn off the screen
-log_message "Turning off screen in 10 seconds..."
+log_message "Turning off all displays in 10 seconds..."
 sleep 10
 
-# First try DPMS
-see xset dpms force off
-check_status "Screen DPMS off"
+# 3. Monitor control - display only, no system suspend
+log_message "Configuring display settings..."
 
-# Alternative method using backlight
+# Disable screen saver and power management features
+see gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing' && echo ok
+see gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing' && echo ok
+
+# Configure DPMS for display only (disable suspend and off states)
+see xset +dpms && echo ok
+see xset dpms 0 0 0 && echo ok  # Disable standby, suspend, and off timers
+
+# Force display to blank state
+see xset dpms force off && echo ok
+
+# Backlight control for built-in displays only
 if [ -d "/sys/class/backlight" ]; then
     for backlight in /sys/class/backlight/*; do
         if [ -w "$backlight/brightness" ]; then
@@ -82,8 +98,13 @@ if [ -d "/sys/class/backlight" ]; then
 fi
 
 # 4. Lock the host
-see dbus-send --type=method_call --dest=org.gnome.ScreenSaver /org/gnome/ScreenSaver org.gnome.ScreenSaver.Lock
+log_message "Locking screen..."
+see dbus-send --type=method_call --dest=org.gnome.ScreenSaver /org/gnome/ScreenSaver org.gnome.ScreenSaver.Lock && echo ok
 check_status "Screen locking"
+
+# One final DPMS force off after lock screen
+sleep 1
+see xset dpms force off && echo ok
 
 # Final status message
 log_message "System lockdown complete"

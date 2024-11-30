@@ -1,21 +1,18 @@
 #!/bin/bash
 
+device_name="Aeropex by AfterShokz"
+
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" )
 dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
 dieifnotinpath bluetoothctl
 
-device_name="Aeropex by AfterShokz"
 mac_address=$(bluetoothctl devices | grep -iP "\s\Q$device_name\E$" | awk '{print $2}')
 test -n "$mac_address" || die "No device found matching '$device_name'"
 test "$(echo "$mac_address" | wc -l)" -eq 1 || die "Multiple devices found matching '$device_name'"
-echo "MAC $mac_address"
+# echo "MAC $mac_address"
 test -n "$1" || die "Usage: $0 [trust|untrust]"
 case "$1" in
-    untrust|trust)
-        see bluetoothctl -- "$1" "$mac_address" || die "failed"
-        ;;
-    *)
-        die "Error: Invalid command. Use 'trust' or 'untrust'"
-        ;;
+    untrust|trust) see bluetoothctl -- "$1" "$mac_address" || die "failed" ;;
+    *)             die "Error: Invalid command.  Use 'trust' or 'untrust'" ;;
 esac

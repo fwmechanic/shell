@@ -224,7 +224,8 @@ my @filters = (
          }
       return $fn;
       },
-
+   sub($fn,$) { return $fn =~ s!^(\d{8})\.(\d{4}|\d{6})\.!$1_$2_!r; }, # restore any leading "yyyymmdd_hhmm[ss]_"
+   sub($fn,$) { return $fn =~ s!^(\d{4}|\d{6}|\d{8})\.!$1_!r; }, # restore any leading "yyyymmdd_"
    #------------ un-preprocessing
    sub($fn,$) { return $fn . $fn_suffix; },  # #########  MUST BE LAST   !!!
    );
