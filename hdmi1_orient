@@ -1,15 +1,22 @@
 #!/bin/bash
 
 device_name="HDMI-1"
+abnormal_rot="right"  # might be "left"...
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" )
 dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
 dieifnotinpath xrandr
 
-test -n "$1" || die "Usage: $0 [portrait|landscape]"
-case "$1" in
-    v|p|vertical|portrait)    see xrandr --output "$device_name" --rotate right  || die "failed" ;;
-    h|l|horizontal|landscape) see xrandr --output "$device_name" --rotate normal || die "failed" ;;
-    *)                            die "Error: Invalid command.  Use 'v|p|vertical|portrait or h|l|horizontal|landscape'" ;;
-esac
+if test -z "$1"; then  # autorotate
+   rotnow="$(xrandr --query | perl -ne 'print $1 if /'$device_name'.+?\b(normal|left|right|inverted)\s/')"
+   test "$rotnow" || die "could not determine current rotation of $device_name"
+   newrot="$(test "$rotnow" = "$abnormal_rot" && echo "normal" || echo "$abnormal_rot")"
+   see xrandr --output "$device_name" --rotate "$newrot" || die "failed"
+else
+   case "$1" in
+       v|p|vertical|portrait)    see xrandr --output "$device_name" --rotate "$abnormal_rot" || die "failed" ;;
+       h|l|horizontal|landscape) see xrandr --output "$device_name" --rotate normal          || die "failed" ;;
+       *)                            die "Error: Invalid command.  Use 'v|p|vertical|portrait or h|l|horizontal|landscape'" ;;
+   esac
+fi

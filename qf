@@ -116,16 +116,25 @@ sub monconv($pat,$tbl) {
       }
    }
 
+my $classToDotDflt = '[\s\.,_! ]';  # chars replaced by '.'
+my $classToDotScans = $classToDotDflt =~ s![_]!!rg;  # changes depending on $scans_mode
+
 my %nm2trailYr;
 my %missingTrailYr;
 
 my @fn_suffix;
 my $fn_suffix;
+my $classToDot; # chars replaced by '.' changes depending on $scans_mode
 
 my @filters = (
 
-   #------------- preprocessing
+   #------------- preprocessing/init
    sub($fn,$) { @fn_suffix = ();  return $fn; },
+   sub($fn,$) {     my $scans_mode = $fn =~ m!^(?:\d{4}|\d{6}|\d{8})_!;
+                       $classToDot = $scans_mode ? $classToDotScans : $classToDotDflt;
+                    #  printf( "scans_mode=%s, classToDot=%s,\n", $scans_mode ?'y':'n', $classToDot );
+                       return $fn;  # unchanged
+              },
    sub($fn,$) {        $fn =~ s!\.[^.]+$!                (push( @fn_suffix, $& ), '')!re; },  # sv_ext
    sub($fn,$) {        $fn =~ s!(?:\.medtype|_cropped|)$!(push( @fn_suffix, $& ), '')!re; },  # sv_cropd
 
@@ -149,9 +158,9 @@ my @filters = (
       },
 
    sub($fn,$) { return $fn =~ m![^_]_[^_]! ? $fn =~ s!__+!-!rg : $fn; },
-   sub($fn,$) { my $rv = $fn =~ s|[\s.,_! ]+|.|rg; 0 && print( 'NOX ', $rv, "\n");  return $rv; },
+   sub($fn,$) { return $fn =~ s!$classToDot+!.!rg; },
 
-   sub($fn,$) { return $fn =~ s!\.?\-\.?!-!rg; },
+   sub($fn,$) { return $fn =~ s!\.?\-\.?!-!rg; },   # compress ' - ' to '-'
 
    #------------- actual filters
    monconv("([A-Za-z]+)"   , \%t_monlongs ),  # replace (publication) Monthname-Yyyy with Yyyy-mm
@@ -224,8 +233,6 @@ my @filters = (
          }
       return $fn;
       },
-   sub($fn,$) { return $fn =~ s!^(\d{8})\.(\d{4}|\d{6})\.!$1_$2_!r; }, # restore any leading "yyyymmdd_hhmm[ss]_"
-   sub($fn,$) { return $fn =~ s!^(\d{4}|\d{6}|\d{8})\.!$1_!r; }, # restore any leading "yyyymmdd_"
    #------------ un-preprocessing
    sub($fn,$) { return $fn . $fn_suffix; },  # #########  MUST BE LAST   !!!
    );

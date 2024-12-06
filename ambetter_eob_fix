@@ -26,9 +26,9 @@ do1file() (
    outdnm="$dirname/reduced"   ; test -d "$outdnm" || mkdir -p "$outdnm"
 
    echo "fullname=$fullname"
-   firstpg="$(see pdfgrep_pgnum "$firstgrepstr" "$fullname")" # ; echo "firstpg=$firstpg"
+   firstpg="$(pdfgrep_pgnum "$firstgrepstr" "$fullname")" # ; echo "firstpg=$firstpg"
    (( firstpg > 0 )) || die "invalid firstpg ($firstpg) in $fullname"
-   lastpg="$(see pdfgrep_pgnum "$lastgrepstr" "$fullname")"   # ; echo "lastpg=$lastpg"
+   lastpg="$(pdfgrep_pgnum "$lastgrepstr" "$fullname")"   # ; echo "lastpg=$lastpg"
    (( lastpg > 0 )) || die "invalid lastpg ($lastpg) in $fullname"
    (( firstpg < lastpg )) || die "not enough pages ($firstpg < $lastpg) in $fullname"
    see "$qpdf" "$fullname" --pages . "$firstpg"-"$lastpg" -- --rotate=+90 "$outdnm/$filename" || die "$qpdf failed"

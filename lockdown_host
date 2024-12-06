@@ -70,8 +70,9 @@ else  # just disconnect a specific device, aeropex_mac
 fi
 
 # Turn off the screen
-log_message "Turning off all displays in 10 seconds..."
-sleep 10
+sleeps=15
+log_message "Turning off all displays in $sleeps seconds..."
+sleep "$sleeps"
 
 # 3. Monitor control - display only, no system suspend
 log_message "Configuring display settings..."
