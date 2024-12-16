@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+
+from datetime import datetime
+import os
+import re
+import subprocess
+import sys
+
+def extract_years_from_pdf(file_path, max_valid_year):
+    """
+    Extracts all valid copyright years from the content of a PDF.
+    """
+    try:
+        # Use hex escape for the (C) symbol
+        pdfgrep_command = [
+            "pdfgrep", "-iP",
+            r"(?:\xA9|copyright|\([cC]\))\s+.*\b\d{4}\b",
+            file_path
+        ]
+        result = subprocess.run(
+            pdfgrep_command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={"LC_ALL": "C.UTF-8"}  # Ensure UTF-8 handling
+        )
+
+        # Debugging output
+        print(f"Command: {' '.join(pdfgrep_command)}")
+        print(f"stdout:\n{result.stdout}")
+        print(f"stderr:\n{result.stderr}")
+
+        # Extract valid 4-digit years from the output
+        years = []
+        for line in result.stdout.splitlines():
+            matches = re.findall(r"\b\d{4}\b", line)
+            print(f"Matched years in line: '{line}': {matches}")  # Debug matched years
+            years.extend(int(year) for year in matches if 1500 <= int(year) <= max_valid_year)
+        return years
+    except Exception as e:
+        print(f"Error processing {file_path}: {e}")
+        return []
+
+def determine_largest_valid_year(years):
+    """
+    Determines the largest valid year.
+    """
+    return max(years, default=None)
+
+def rename_file(file_path, largest_year):
+    """
+    Renames the file to include the largest valid year if necessary.
+    Normalizes the file extension to lowercase `.pdf`.
+    """
+    directory, filename = os.path.split(file_path)
+    base, ext = os.path.splitext(filename)
+
+    # Normalize the extension to lowercase
+    ext = ext.lower()
+
+    # Ensure we are dealing with a .pdf file
+    if ext != ".pdf":
+        print(f"Skipping non-PDF file: {filename}")
+        return
+
+    # Normalize file extension if not already lowercase
+    normalized_filename = f"{base}.pdf"
+    normalized_file_path = os.path.join(directory, normalized_filename)
+    if file_path != normalized_file_path:
+        os.rename(file_path, normalized_file_path)
+        file_path = normalized_file_path
+        filename = normalized_filename
+        print(f"Renamed for extension normalization: {filename}")
+
+    # Check if a valid year already exists at the end of the filename
+    match = re.search(r"(\d{4})\.(medtype\.)?pdf$", filename, re.IGNORECASE)
+    existing_year = int(match.group(1)) if match else None
+
+    # Skip renaming if the existing year matches the largest valid year
+    if existing_year == largest_year:
+        print(f"Correct year already in file name: {filename}")
+        return
+
+    # Construct the new filename
+    if ".medtype" in filename.lower():
+        new_filename = re.sub(r"(\d{4}\.)?medtype\.pdf$", f"{largest_year}.medtype.pdf", filename, flags=re.IGNORECASE)
+    else:
+        new_filename = re.sub(r"(\d{4}\.)?pdf$", f"{largest_year}.pdf", filename, flags=re.IGNORECASE)
+
+    # Perform the renaming
+    new_file_path = os.path.join(directory, new_filename)
+    if file_path != new_file_path:
+        os.rename(file_path, new_file_path)
+        print(f"Renamed: {filename} -> {new_filename}")
+
+def main(file_paths):
+    # Get the current year and calculate the max valid year
+    current_year = datetime.now().year
+    max_valid_year = current_year + 1
+
+    for file_path in file_paths:
+        # Ensure the file exists
+        if not os.path.isfile(file_path):
+            print(f"File not found: {file_path}")
+            continue
+
+        # Extract copyright years from the PDF content
+        years = extract_years_from_pdf(file_path, max_valid_year)
+        if not years:
+            print(f"No copyright year found for {file_path}")
+            continue
+
+        # Determine the largest valid year
+        largest_year = determine_largest_valid_year(years)
+        if not largest_year:
+            print(f"No valid copyright year found for {file_path}")
+            continue
+
+        # Rename the file if necessary
+        rename_file(file_path, largest_year)
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python rename_with_copyright_year.py <file1.pdf> [<file2.pdf> ...]")
+        sys.exit(1)
+
+    main(sys.argv[1:])

@@ -1,0 +1,19 @@
+#!/bin/bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+dieifnotinpath sg_raw
+
+device=$(lsblk -lno NAME,MODEL,SERIAL | perl -ne 'print "/dev/$1\n" if /^(\S+)\s+.*My Passport.+5758363144353846444B3843/')
+test "$device" || die "'My Passport' not found."
+echo "$device"
+
+required_size=40
+temp_file=$(mktemp)
+printf '\x45\x00\x00\x00\x00\x00\x00\x20\xc0\x45\x12\x61\x71\x20\x86\xc4\x3c\x39\xc2\xdf\x16\x12\x53\x2e\x40\xdd\x76\xd3\x33\xe5\x61\x78\x2d\xb7\x6d\xa9\xf3\x03\x26\x94' > "$temp_file"
+size="$(stat --format="%s" "$temp_file")"
+(( size == required_size )) || die "wrong filesize: expected $required_size got $size ?"
+echo "expect 'SCSI Status: Good' (it may take awhile)"
+see sudo sg_raw -s "$required_size" -i "$temp_file" "$device" c1 e1 00 00 00 00 00 00 28 00
+rm -f "$temp_file"
