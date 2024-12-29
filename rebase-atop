@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# $1: reference branchname to rebase the current branch's commit's atop
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+name_eq_notional_master() { test "$1" = 'master' || test "$1" = 'main' ; }
+local_branch_exists()  { git show-ref --verify --quiet "refs/heads/$1"; }
+remote_branch_exists() { git show-ref --verify --quiet "refs/remotes/origin/$1"; }
+tag_exists()           { git show-ref --verify --quiet "refs/tags/$1"; }
+
+set -e  # Exit immediately if a command exits with a non-zero status.
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "Error: Not in a Git repository"
+
+current_branch="$(git branch --show-current)" ; test "$current_branch" || die "Error: no current branch in a Git repository???"
+src_br="$current_branch"            # branch assumed to have my recent changes
+dst_br="$1" ;     test "$dst_br" || die "missing only param, dest shared branch name"
+test "$dst_br" != "$src_br" || die "ref & src branches cannot be the same!"
+
+remote_branch_exists "$dst_br" || die "#2 param, dest shared branchname, has not remote"  # might be irrelevant
+
+# Update "$dst_br" main
+see git checkout "$dst_br"    || die "switching to $dst_br FAILED???"
+see git pull origin "$dst_br" || die "pulling latest $dst_br from remote FAILED???"
+
+# Before rebase:
+# A---B---C (main/"$dst_br")
+#      \
+#       D---E (dev/"$src_br")
+#
+
+see git checkout "$src_br" || die "switching to $src_br FAILED???"
+see git rebase "$dst_br"   || die "rebasing $src_br commits atop $dst_br FAILED!!!"
+
+# After rebase:
+# A---B---C (main/"$dst_br")
+#          \
+#           D'---E' (dev/"$src_br")
