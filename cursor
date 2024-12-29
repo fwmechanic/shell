@@ -1,0 +1,32 @@
+#!/bin/bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+
+CURSOR_DIR="$HOME/.local/bin/"  # Directory where Cursor AppImages are stored
+
+# https://forum.cursor.com/top?ascending=false&order=activity
+# https://www.cursor.com/changelog
+# download page  https://www.cursor.com/downloads
+# https://github.com/PatrickJS/awesome-cursorrules
+
+# Find the most recent Cursor AppImage file matching the pattern
+latest_cursor=$(find "$CURSOR_DIR" -maxdepth 1 -type f -name "cursor-*.AppImage" | sort -V | tail -n 1)
+
+test -n "$latest_cursor" || die "Error: No Cursor AppImage found in $CURSOR_DIR"
+
+if [ ! -x "$latest_cursor" ]; then
+    see chmod +x "$latest_cursor"
+fi
+
+krmbak rmall
+
+# setMyCodeCursorSettings
+
+# Execute the AppImage with any provided arguments or '.'
+if [ $# -eq 0 ]; then
+    see exec "$latest_cursor" "."
+else
+    see exec "$latest_cursor" "$@"
+fi
