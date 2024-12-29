@@ -22,8 +22,9 @@ do1file() (
    extension="${filename##*.}"              # ; echo "extension $extension"
    basename="${filename%.*}"                # ; echo "basename  $basename"
    # logical parameters:
-   bakdnm="$dirname/originals" ; test -d "$bakdnm" || mkdir -p "$bakdnm"
-   outdnm="$dirname/reduced"   ; test -d "$outdnm" || mkdir -p "$outdnm"
+   rotdnm="$dirname/origrot" ; test -d "$rotdnm" || mkdir -p "$rotdnm"  # where rotated version of original file is created
+   outdnm="$dirname/reduced" ; test -d "$outdnm" || mkdir -p "$outdnm"  # where reduced+rotated version of original file is created
+   bakdnm="$dirname/backup"  ; test -d "$bakdnm" || mkdir -p "$bakdnm"  # where original file is moved
 
    echo "fullname=$fullname"
    firstpg="$(pdfgrep_pgnum "$firstgrepstr" "$fullname")" # ; echo "firstpg=$firstpg"
@@ -31,7 +32,15 @@ do1file() (
    lastpg="$(pdfgrep_pgnum "$lastgrepstr" "$fullname")"   # ; echo "lastpg=$lastpg"
    (( lastpg > 0 )) || die "invalid lastpg ($lastpg) in $fullname"
    (( firstpg < lastpg )) || die "not enough pages ($firstpg < $lastpg) in $fullname"
-   see "$qpdf" "$fullname" --pages . "$firstpg"-"$lastpg" -- --rotate=+90 "$outdnm/$filename" || die "$qpdf failed"
+   # BAFFLINGLY, pdfgrep output VARIES DEPENDING ON INPUT FILE PAGE ROTATION(!!!).
+   # So a prerequisite for renaming the original file using `rename_ambetter_eob`
+   # (which was developed and tested on "reduced+rotated" files) is to create a
+   # correctly-rotated version of the original file (i.e. one removing no pages)
+   # and run `rename_ambetter_eob` on it (successfully)!  Goofy but it works.
+   see "$qpdf" "$fullname" --rotate=+90:2-$lastpg -- "$rotdnm/$filename" || die "$qpdf [rotdnm] failed"
+   see rename_ambetter_eob "$rotdnm/$filename"
+   see "$qpdf" "$fullname" --pages . "$firstpg"-"$lastpg" -- --rotate=+90 "$outdnm/$filename" || die "$qpdf [outdnm] failed"
+   see rename_ambetter_eob "$outdnm/$filename"
    see mv -n "$fullname" "$bakdnm/$filename" || die "backup move failed"
    )
 

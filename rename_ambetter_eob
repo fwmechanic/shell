@@ -1,0 +1,180 @@
+#!/usr/bin/env perl
+
+# Member ID to initial$ mapping
+my %MEMBER_TO_INITIAL = (
+   'U9728842101' => 'M',
+   'U9728842102' => 'F',
+   # Add more mappings as needed
+);
+
+use strict;
+use warnings;
+use autodie;
+use File::Basename;
+use Data::Dumper;
+use Getopt::Long;
+
+# Parse command line options
+my $debug = 0;  # Default to debug off
+GetOptions("debug|d" => \$debug) or die "Usage: $0 [-d] pdf-file ...\n";
+
+# Define the base pattern
+my $DATE_PATTERN_STR = '\d{1,2}/\d{1,2}/\d{4}';
+my $DATE_PATTERN = qr/$DATE_PATTERN_STR/;
+my $PDFGREP_PATTERN = "(Provider Name:|$DATE_PATTERN_STR)";
+
+sub normalize_provider {
+   my ($provider) = @_;
+   warn "DEBUG: normalizing provider: '$provider'\n" if $debug;
+   # Strip after comma and normalize whitespace
+   $provider =~ s/,.*$//;
+   $provider =~ s/\s+/ /g;
+   $provider =~ s/^\s+|\s+$//g;
+
+   my @words = split /\s+/, $provider;
+
+   # If second word is AND/OF, take three words
+   if ($#words >= 2 && $words[1] =~ /^(AND|OF)$/) {
+       $provider = join '-', @words[0..2];
+   } else {
+       # Otherwise take up to two words
+       $provider = join '-', @words[0..($#words > 0 ? 1 : 0)];
+   }
+
+   warn "DEBUG: normalized to: '$provider'\n" if $debug;
+   return $provider;
+}
+
+sub process_file {
+   my ($pdf_file) = @_;
+   my %claims;          # Store claim info
+   my $member_id;       # Track member ID
+   my $eob_date;        # File-level EOB date
+   my @errors;          # Collect validation errors
+
+   warn "DEBUG: Processing file: $pdf_file\n" if $debug;
+   warn "DEBUG: PDFGREP pattern: $PDFGREP_PATTERN\n" if $debug;
+
+   # Run pdfgrep and capture all output first
+   warn "DEBUG: Raw pdfgrep output:\n" if $debug;
+   open(my $grep, "-|", "pdfgrep", "-P", $PDFGREP_PATTERN, $pdf_file)
+       or die "Failed to run pdfgrep: $!";
+   my @lines = <$grep>;
+   warn join("", @lines) if $debug;
+   close($grep);
+
+   # Now process the captured lines
+   for my $line (@lines) {
+       chomp $line;
+       warn "DEBUG: Processing line: $line\n" if $debug;
+
+       if ($line =~ /Member ID: (\w+).*EOB Date: ($DATE_PATTERN)/) {
+           my $id = $1;
+           my ($month, $day, $year) = split '/', $2;
+           my $this_eob_date = sprintf("%04d%02d%02d", $year, $month, $day);
+
+           # Check for EOB date conflicts
+           if (defined $eob_date && $this_eob_date ne $eob_date) {
+               push @errors, "Conflicting EOB dates found: $eob_date vs $this_eob_date";
+           }
+           $eob_date = $this_eob_date;
+
+           warn "DEBUG: Found Member ID: $id, EOB Date: $eob_date\n" if $debug;
+
+           if (defined $member_id && $id ne $member_id) {
+               push @errors, "Multiple Member IDs found: $member_id and $id";
+           }
+           $member_id = $id;
+       }
+       elsif ($line =~ /Provider Name: (.*?)\s+Network Status:.*Claim Number: (\w+)/) {
+           my $provider = normalize_provider($1);
+           my $claim_num = $2;
+           warn "DEBUG: Found Provider: $provider, Claim Number: $claim_num\n" if $debug;
+
+           $claims{$claim_num} = {
+               provider => $provider,
+               claim_num => $claim_num,
+               dates => {},
+               eob_date => $eob_date,
+           };
+       }
+       elsif ($line =~ /^\d{4}\s+($DATE_PATTERN)\s+$DATE_PATTERN/) {
+           my ($month, $day, $year) = split '/', $1;
+           my $date = sprintf("%04d%02d%02d", $year, $month, $day);
+           warn "DEBUG: Found service date: $date\n" if $debug;
+           my ($claim) = grep { !defined $_->{service_date} } values %claims;
+           if ($claim) {
+               $claim->{dates}{$date}++;
+               # Check for multiple dates in claim
+               if (keys %{$claim->{dates}} > 1) {
+                   push @errors, "Multiple service dates found for a claim";
+               }
+               $claim->{service_date} = $date;
+           }
+       }
+   }
+
+   warn "DEBUG: Final claims structure:\n" . Dumper(\%claims) if $debug;
+
+   # Validate we found necessary data
+   push @errors, "No Member ID found" unless defined $member_id;
+   push @errors, "No EOB date found" unless defined $eob_date;
+   push @errors, "No claims found" unless %claims;
+
+   # Validate member ID exists in mapping
+   if (!exists $MEMBER_TO_INITIAL{$member_id}) {
+       push @errors, "Member ID $member_id not found in mapping table";
+   }
+
+   # Validate service dates
+   for my $claim (values %claims) {
+       push @errors, "No service date found for claim $claim->{claim_num}"
+           unless defined $claim->{service_date};
+   }
+
+   # If we have errors, report them and return
+   if (@errors) {
+       warn "$pdf_file: " . join("\n\t", @errors) . "\n";
+       return;
+   }
+
+   # Sort claims by service date and then by claim number for stability
+   my @sorted_claims = sort {
+       $a->{service_date} cmp $b->{service_date}
+       ||
+       $a->{claim_num} cmp $b->{claim_num}
+   } values %claims;
+
+   warn "DEBUG: Sorted claims:\n" . Dumper(\@sorted_claims) if $debug;
+
+   # Generate new filename - now handling N claims
+   my $new_name = sprintf("%s.%s_%s_%s_%s.pdf",
+       $MEMBER_TO_INITIAL{$member_id},
+       $sorted_claims[0]->{service_date},
+       $sorted_claims[-1]->{service_date},
+       $eob_date,
+       join('_', map { "$_->{claim_num}.$_->{provider}" } @sorted_claims)
+   );
+
+   warn "DEBUG: Generated new name: $new_name\n" if $debug;
+
+   my $current_base = basename($pdf_file);
+   if ($new_name eq $current_base) {
+       warn "$pdf_file: Already has correct name\n";
+       return;
+   }
+
+   my $dir = dirname($pdf_file);
+   my $new_path = "$dir/$new_name";
+
+   if (-e $new_path) {
+       warn "$pdf_file: Target file $new_path already exists, skipping\n";
+       return;
+   }
+
+   rename($pdf_file, $new_path);
+   warn "$pdf_file -> $new_path\n";
+}
+
+die "Usage: $0 [-d] pdf-file ...\n" unless @ARGV;
+process_file($_) for @ARGV;
