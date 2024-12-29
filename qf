@@ -139,6 +139,8 @@ my @filters = (
    sub($fn,$) {        $fn =~ s!(?:\.medtype|_cropped|)$!(push( @fn_suffix, $& ), '')!re; },  # sv_cropd
 
    # convert exo-ASCII chars to punct
+   sub($fn,$) { return $fn =~ s!\xe2\x80!-!rg; },
+   sub($fn,$) { return $fn =~ s!\x99!$q1!rg; },
    sub($fn,$) { return $fn =~ s!–!-!rg; },
 
    sub($fn,$) { return $fn =~ s!^Letmeread\.net_!!r; },
@@ -255,7 +257,7 @@ my ($rename_file,$remove_file,$mvUndoLog_fnm,$mvUndoLog,$mvCount);
       # print( 'mvUndoLog_fnm ', $mvUndoLog_fnm, "\n" );
       $mvCount = 0;
       $rename_file = sub ($fn,$nfn) { $mv_msg->($fn,$nfn);
-         if( !rename( $fn, $nfn ) ) {
+         if( !rename( $fn, $nfn ) || !(-f $nfn) ) {
             print( STDERR "!!! rename FAILED: $!\n" );
             }
          else {
