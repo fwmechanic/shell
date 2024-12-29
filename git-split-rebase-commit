@@ -1,0 +1,61 @@
+#!/bin/bash
+
+# rebase-helper.sh - Helper script for git rebase interactive workflow
+# Usage: rebase-helper.sh [commit_msg_file]
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+# Check if we're in a git repository
+git rev-parse --git-dir > /dev/null 2>&1 || die "Error: not in a git repository"
+
+test -d "$(git rev-parse --git-dir)/rebase-merge" ||
+test -d "$(git rev-parse --git-dir)/rebase-apply" ||
+    die "Error: not currently in a rebase"
+
+# Show rebase progress and status
+echo -e "\n${GREEN}Rebase progress:${NC}"
+if test -f "$(git rev-parse --git-dir)/rebase-merge/end"; then
+    current=$(cat "$(git rev-parse --git-dir)/rebase-merge/msgnum")
+    total=$(cat "$(git rev-parse --git-dir)/rebase-merge/end")
+    echo "rebase progress: commit $current of $total"
+fi
+
+# Check if the current rebase step is 'edit'
+git rebase --show-current-patch >/dev/null 2>&1 || die "Error: no commit currently being edited"
+
+# Default location for saving commit messages
+MSG_FILE=${1:-"/tmp/last-commit-msg"}
+
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Save the current commit message
+echo -e "${BLUE}Saving current commit message to ${MSG_FILE}...${NC}"
+git log -1 --format=%B > "$MSG_FILE"
+
+# Display the saved message
+echo -e "${GREEN}Original commit message:${NC}"
+cat "$MSG_FILE"
+echo
+
+# Create backup in git notes in case the temp file is lost
+echo -e "${BLUE}Creating backup in git notes...${NC}"
+git notes add -m "Original commit message before reset: $(cat "$MSG_FILE")" HEAD
+
+# Perform the reset
+echo -e "${GREEN}Performing git reset HEAD^...${NC}"
+git reset HEAD^
+
+# Show status and help text
+echo -e "\n${GREEN}Current status:${NC}"
+git status
+
+echo -e "\n${BLUE}Helpful commands for your next steps:${NC}"
+echo "  - View saved message:     cat $MSG_FILE"
+echo "  - Create first commit:    git commit -F $MSG_FILE"
+echo "  - View staged changes:    git diff --cached"
+echo "  - Stage changes:          git add -p"
+echo "  - View backup message:    git notes show HEAD@{1}"
