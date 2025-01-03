@@ -90,7 +90,7 @@ my $last_year = $year+1900+1;  # print( 'last_year', ' ', $last_year, "\n" );   
 
 sub ynok ($yn)  { $yn = 0+$yn; return $yn > 1912 && $yn <= $last_year; }
 
-my @monlongs = qw( January February March April May June July August September October November December );
+my @monlongs = qw( january february march april may june july august september october november december );
 # print( Dumper(\@monlongs) );
 my %t_monlongs = ();
 my %t_mons     = ();
@@ -103,11 +103,14 @@ sub monconv($pat,$tbl) {
    my $pat2 = '[-.]' . $pat . '\.' . $pat . "\." . '(\d{4})$';   # print( 'mc+', ' ', $pat1, "\n", '    ', $pat2, "\n" );
    return sub($fn,$) {                                           # print( 'mc+', ' ', $fn  , "\n", '    ', $pat , "\n" );
       my ($m1,$m2,$yr) = $fn =~ /$pat2/;
+      $m1 = lc $m1 if $m1;
+      $m2 = lc $m2 if $m2;
       # if( $yr ) { print( 'm1=', $m1, ' m2=', $m2, ' yr=', $yr, "\n" ); }
       if( $yr && ynok( $yr ) && $tbl->{$m1} && $tbl->{$m2} ) {
          return $fn =~ s/$pat2/sprintf(".%s.%02d",$yr,$tbl->{$m1})/reg;
          }
       ($m1,$yr) = $fn =~ /$pat1/;
+      $m1 = lc $m1 if $m1;
       # if( $yr ) { print( 'm1=', $m1, ' yr=', $yr, "\n" ); }
       if( $yr && ynok( $yr ) && exists $tbl->{$m1} ) {  # print( 'mc#', ' ', $yr, ' ', $m1, "\n" );
          return $fn =~ s/$pat1/sprintf(".%s.%02d",$yr,$tbl->{$m1})/reg;
@@ -204,8 +207,13 @@ my @filters = (
    sub($fn,$) { return $fn =~ s!\.#\.!.@.!rg; },
    sub($fn,$) { return $fn =~ s![Ww]orld\.[Ww]ar\.[I1]\b!WW1$1!rg; },
    sub($fn,$) { return $fn =~ s![Ww]orld\.[Ww]ar\.2\b!WW2$1!rg; },
-   sub($fn,$) { return $fn =~ s![Ww]orld\.[Ww]ar\.II\b!WW2$1!rg; },
+   sub($fn,$) { return $fn =~ s!world\.war\.(?:2|II)\b!WW2!rgi; },
    sub($fn,$) { return $fn =~ s!\.[Ww][Ww]II!.WW2\b!rg; },
+   sub($fn,$) { return $fn =~ s![\.-]issue[\.-](\d+)[\.-]!.i$1.!rgi; },
+   sub($fn,$) { return $fn =~ s![\.-]vol(?:ume)?[\.-](\d+)[\.-]!.v$1.!rgi; },
+   sub($fn,$) { return $fn =~ s![\.-]v(\d+)[\.-]!.v$1.!rgi; },
+   sub($fn,$) { return $fn =~ s![\.-]i(\d+)[\.-]!.i$1.!rgi; },
+   sub($fn,$) { return $fn =~ s!\.(i\d+)\.(v\d+)\.!.$2.$1.!rg; },
 
    sub($fn,$) { return $fn =~ s![-.]1st\.[Ee]dition\b!.1e!rg; },
    sub($fn,$) { return $fn =~ s![-.][Ff]irst\.[Ee]dition\b!.1e!rg; },
