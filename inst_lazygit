@@ -1,0 +1,8 @@
+#!/bin/bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+see curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep -Po '"tag_name": "v\K[^"]*')_Linux_x86_64.tar.gz"
+#tar xf lazygit.tar.gz lazygit
+#sudo install lazygit /usr/local/bin

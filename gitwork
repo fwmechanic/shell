@@ -1,0 +1,24 @@
+#!/bin/bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+set -ex
+
+# 1. Abandon the current cherry-pick
+git cherry-pick --abort
+
+# 2. Checkout the branch
+git checkout realtime-api-integration
+
+# 3. Split the commit
+# git reset HEAD^
+# git add -p  # This allows you to selectively stage changes
+# # Stage all changes except those in server/utils/index.ts
+# git commit -m "Changes for cherry-picking onto main"
+# git add server/utils/index.ts
+# git commit -m "Changes to server/utils/index.ts"
+#
+# # 4. Switch to main and cherry-pick
+# git checkout main
+# git cherry-pick <new-commit-hash>  # The hash of the "Changes for cherry-picking onto main" commit

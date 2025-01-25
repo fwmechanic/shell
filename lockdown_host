@@ -4,7 +4,7 @@
 # silence and lock a Linux host (w/o shutting it down)
 # basically, eliminate any source of human annoyance:
 # * screen illumination
-# * speaker noise
+# * speaker noise (chiefly slack notification noise which has been hard to quell)
 # * bluetooth devices remaining connected
 
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
@@ -15,6 +15,7 @@ dieifnotinpath pactl
 dieifnotinpath rfkill
 dieifnotinpath xset
 dieifnotinpath dbus-send
+dieifnotinpath gsettings
 
 aeropex_mac='20:74:CF:BE:98:96'
 
@@ -32,14 +33,19 @@ check_status() {
     fi
 }
 
-# 1. Mute all sound output
-log_message "Muting audio..."
-see pactl set-sink-mute @DEFAULT_SINK@ 1 && echo ok
+silence() {
+  # 1. Mute all sound output (try doing it as late as possible)
+  log_message "Muting audio..."
+  see pactl set-sink-mute @DEFAULT_SINK@ 1 && echo ok
 
-# Get current volume for logging
-current_volume=$(pactl get-sink-volume @DEFAULT_SINK@ | grep -Po '\d+(?=%)' | head -1)
-log_message "Current volume: $current_volume%"
+  # Get current volume for logging
+  current_volume=$(pactl get-sink-volume @DEFAULT_SINK@ | grep -Po '\d+(?=%)' | head -1)
+  log_message "Current volume: $current_volume%"
 
+  slack_noise false
+  }
+
+silence
 
 # https://linuxconfig.org/how-to-manage-wifi-interfaces-with-rfkill-command-on-linux
 #
@@ -69,6 +75,8 @@ else  # just disconnect a specific device, aeropex_mac
    see bluetoothctl disconnect "$aeropex_mac" && echo ok
 fi
 
+silence
+
 # Turn off the screen
 sleeps=15
 log_message "Turning off all displays in $sleeps seconds..."
@@ -97,6 +105,8 @@ if [ -d "/sys/class/backlight" ]; then
     done
     check_status "Backlight control"
 fi
+
+silence
 
 # 4. Lock the host
 log_message "Locking screen..."

@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# Array of directories to process
+dirs=(
+    "$HOME/.config/Code/Cache"
+    "$HOME/.config/Code/CachedData"
+    "$HOME/.config/Code/User/globalStorage"
+    "$HOME/.config/Code/logs"
+)
+
+# Workspace storage requires special handling
+workspace_storage="$HOME/.config/Code/User/workspaceStorage"
+
+# Function to calculate total size
+calculate_total_size() {
+    local total_kib=$(du -sc "${dirs[@]}" "$workspace_storage" | tail -n 1 | cut -f1)
+    echo $((total_kib * 1024))  # Convert KiB to bytes
+}
+
+# Estimate space usage
+echo "Estimating VS Code data usage:"
+du -sh "${dirs[@]}" "$workspace_storage"
+
+echo -e "\nDetailed size in KiB:"
+du -sc "${dirs[@]}" "$workspace_storage"
+
+total_before=$(calculate_total_size)
+echo -e "\nTotal space used before cleanup: $(numfmt --to=iec --suffix=B $total_before)"
+
+# Prompt for cleanup
+read -p "Do you want to proceed with cleanup? (y/n) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]
+then
+    # Perform cleanup
+    for dir in "${dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            echo "Cleaning $dir"
+            rm -rf "$dir"/*
+        fi
+    done
+
+    # Special handling for workspaceStorage
+    if [ -d "$workspace_storage" ]; then
+        echo "Cleaning $workspace_storage (preserving workspace settings)"
+        find "$workspace_storage" -mindepth 1 -maxdepth 1 -type d | while read -r workspace; do
+            # Preserve workspace settings file
+            find "$workspace" -mindepth 1 -maxdepth 1 ! -name 'workspace.json' -exec rm -rf {} +
+        done
+    fi
+
+    # Recalculate space usage after cleanup
+    total_after=$(calculate_total_size)
+    space_freed=$((total_before - total_after))
+    echo -e "\nCleanup completed."
+    echo "Space freed: $(numfmt --to=iec --suffix=B $space_freed)"
+    echo "Total space used after cleanup: $(numfmt --to=iec --suffix=B $total_after)"
+else
+    echo "Cleanup aborted."
+fi

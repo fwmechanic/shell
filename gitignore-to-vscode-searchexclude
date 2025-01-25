@@ -1,0 +1,71 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use File::Find;
+use JSON::PP;
+use Cwd qw(abs_path);
+
+# Get git root directory
+chomp(my $git_root = `git rev-parse --show-toplevel`);
+die "Not in a git repository" if $? != 0;
+$git_root = abs_path($git_root);
+
+# Initialize variables
+my %exclude_patterns;
+
+# Convert .gitignore pattern to VS Code pattern
+sub convert_pattern {
+    my $pattern = shift;
+
+    # Remove comments and empty lines
+    return '' if $pattern =~ /^\s*#/ || $pattern =~ /^\s*$/;
+    $pattern =~ s/^\s+|\s+$//g;  # trim whitespace
+
+    # Handle negation patterns (we'll skip them as VS Code doesn't support them well)
+    return '' if $pattern =~ /^!/;
+
+    # Convert .gitignore pattern to VS Code pattern
+    $pattern =~ s|^\./||;  # Remove leading ./
+
+    # Add ** prefix if pattern doesn't start with / or **/
+    $pattern = "**/$pattern" unless $pattern =~ m|^/| || $pattern =~ m|^\*\*/|;
+
+    # Remove leading / as VS Code patterns are relative
+    $pattern =~ s|^/||;
+
+    return $pattern;
+}
+
+# Find all .gitignore files in the git worktree
+sub wanted {
+    return unless $_ eq '.gitignore';
+
+    # Get relative path to .gitignore file for logging/debugging
+    my $rel_path = $File::Find::name;
+    $rel_path =~ s|^$git_root/||;
+
+    print STDERR "Processing $rel_path\n";  # Optional debug output
+
+    open(my $fh, '<', $_) or die "Cannot open $rel_path: $!";
+    while (my $line = <$fh>) {
+        chomp $line;
+        my $pattern = convert_pattern($line);
+        next unless $pattern;
+        $exclude_patterns{$pattern} = JSON::PP::true;
+    }
+    close($fh);
+}
+
+# Start the search from git root directory
+find(\&wanted, $git_root);
+
+# Create the JSON structure
+my $settings = {
+    'search.useIgnoreFiles' => JSON::PP::true,
+    'search.useGlobalIgnoreFiles' => JSON::PP::true,
+    'search.exclude' => \%exclude_patterns
+};
+
+# Output the JSON
+my $json = JSON::PP->new->pretty->encode($settings);
+print $json;

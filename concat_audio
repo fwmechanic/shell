@@ -1,0 +1,104 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use File::Basename;
+use Cwd qw(abs_path getcwd);
+use Getopt::Long;
+
+# Add command line option for overwrite
+my $overwrite = 0;
+GetOptions("overwrite" => \$overwrite) or die "Error in command line arguments\n";
+
+# Check if we have at least two arguments
+die "Usage: $0 [--overwrite] <input_file> <number_of_files_to_concat>\n" unless @ARGV >= 2;
+
+my ($input_file, $num_files) = @ARGV;
+$input_file = abs_path($input_file);
+
+# Extract prefix, seqnum, phasenum, and extension from the input file
+my ($dir, $filename) = $input_file =~ m{^(.+)/([^/]+)$};
+my ($prefix, $seqnum, $phasenum, $ext) = $filename =~ /^(.+)_(\d+)-([01])\.(.+)$/;
+die "Invalid input filename format\n" unless defined $prefix && defined $ext;
+
+# Determine the width of the seqnum field
+my $seqnum_width = length($seqnum);
+
+print "Directory: $dir\n";
+print "Prefix: $prefix\n";
+print "Starting seqnum: $seqnum (width: $seqnum_width)\n";
+print "Phasenum: $phasenum (only processing files with this phase)\n";
+print "Extension: $ext\n\n";
+
+my $base_seqnum = $seqnum;
+
+# Array to store input filenames
+my @input_files;
+
+# Accumulate input filenames
+my $count = 0;
+my $last_seqnum = $seqnum;
+
+while ($count < $num_files) {
+    my $filename = sprintf("%s/%s_%0*d-%d.%s", $dir, $prefix, $seqnum_width, $seqnum, $phasenum, $ext);
+    print "Checking file: $filename\n";
+    if (-e $filename) {
+        push @input_files, abs_path($filename);
+        print "File added: $filename\n";
+        $last_seqnum = $seqnum;
+        $count++;
+    } else {
+        print "File not found: $filename\n";
+        last;  # Exit the loop when the first missing file is encountered
+    }
+
+    # Increment seqnum by 1 (skipping the other phase)
+    $seqnum++;
+}
+
+if ($count == 0) {
+    die "No matching files found to concatenate.\n";
+}
+
+# Construct final output filename
+my $output_file = sprintf("%s/%s_%0*d-%d_%0*d-%d.%s", $dir, $prefix, $seqnum_width, $base_seqnum, $phasenum, $seqnum_width, $last_seqnum, $phasenum, $ext);
+
+# Create .fnms file in current working directory
+my $cwd = getcwd();
+my $fnms_file = "$cwd/" . basename($output_file, ".$ext") . ".fnms";
+
+# Write accumulated filenames to the .fnms file
+open(my $fh, '>', $fnms_file) or die "Could not open file '$fnms_file' $!";
+foreach my $file (@input_files) {
+    print $fh "file '$file'\n";
+}
+close $fh;
+
+print "\nPreparing to concatenate $count files.\n";
+print "Output file will be: $output_file\n";
+print "File list saved in: $fnms_file\n";
+
+# Check if output file exists and exit if overwrite is not specified
+if (-e $output_file && !$overwrite) {
+    die "Error: Output file '$output_file' already exists. Use --overwrite to force overwrite.\n";
+}
+
+# Construct log filename
+my $log_file = $output_file;
+$log_file =~ s/\.[^.]+$/.log/;
+
+# Run ffmpeg command
+my $ffmpeg_cmd = "ffmpeg -y -f concat -safe 0 -i \"$fnms_file\" -c copy \"$output_file\" 2>&1";
+print "\nExecuting command: $ffmpeg_cmd\n";
+print "FFmpeg output will be logged to: $log_file\n";
+
+open(my $log_fh, '>', $log_file) or die "Could not open log file '$log_file' $!";
+open(my $ffmpeg, "$ffmpeg_cmd |") or die "Could not run ffmpeg: $!";
+while (<$ffmpeg>) {
+    print $log_fh $_;
+}
+close $ffmpeg;
+close $log_fh;
+
+print "Concatenation complete. Output file: $output_file\n";
+print "Number of files concatenated: $count\n";
+print "File list saved in: $fnms_file\n";

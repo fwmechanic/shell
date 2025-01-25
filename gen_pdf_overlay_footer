@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+
+#
+# Usage:
+#   ./make_footer_watermark.sh "Left footer text" "Right footer text"
+
+LEFT="$1"
+RIGHT="$2"
+
+cat <<'END_PS' > watermark.ps
+%!PS
+% Set page size to letter (612x792); adjust if needed
+<< /PageSize [612 792] >> setpagedevice
+
+/Helvetica findfont 12 scalefont setfont
+
+% Bottom margin
+36 dup translate  % Move origin 36pt right, 36pt up
+0 0 moveto
+
+% We'll define a helper procedure to show text on the right side
+% of the page. 'showright' is a custom operator that measures the string,
+% then places it from the right margin minus 36pt.
+/showright {
+   % 0 index => (string)
+   dup stringwidth pop            % measure width
+   612 exch sub                   % 612 = page width; subtract string width
+   72 sub                         % subtract 72 for the right margin
+   0 moveto
+   show
+} def
+
+% Left text
+(%LEFT_TEXT%) show
+
+% Move to the same baseline, but we reset x
+0 0 moveto
+
+% Right text
+(%RIGHT_TEXT%) showright
+
+showpage
+END_PS
+
+# Replace placeholders with our 2 arguments (escape if necessary!)
+sed -i "s|%LEFT_TEXT%|${LEFT}|" watermark.ps
+sed -i "s|%RIGHT_TEXT%|${RIGHT}|" watermark.ps
+
+# Use Ghostscript to produce a PDF
+gs \
+  -sDEVICE=pdfwrite \
+  -dCompatibilityLevel=1.4 \
+  -dPDFSETTINGS=/screen \
+  -o watermark.pdf \
+  -f watermark.ps
+
+echo "Created watermark.pdf"

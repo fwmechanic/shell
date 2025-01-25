@@ -119,7 +119,7 @@ sub monconv($pat,$tbl) {
       }
    }
 
-my $classToDotDflt = '[\s\.,_! ]';  # chars replaced by '.'
+my $classToDotDflt = '[\s\.,_! ' . $q1 . ']';  # chars replaced by '.'
 my $classToDotScans = $classToDotDflt =~ s![_]!!rg;  # changes depending on $scans_mode
 
 my %nm2trailYr;
@@ -152,7 +152,8 @@ my @filters = (
 
    sub($fn,$) { return $fn =~ s!^[-.\s]+!!rg; },
 
-   sub($fn,$) { return count($fn, '[\.\_\s]')==0 && count($fn, '\-')>1 ? $fn =~ s!\-!.!rg : $fn; },  # some (e.g. magazine) file names are 100% '-' separated
+   sub($fn,$) { return count($fn, '[\.\_\s]')==0 && count($fn, '\-')>1 ? $fn =~ s!\-!.!rg : $fn; },  # some file names are 100% '-' separated
+   sub($fn,$) { return count($fn, '[\.\_\s]')==0 && count($fn, '\+')>1 ? $fn =~ s!\+!.!rg : $fn; },  # some file names are 100% '+' separated
    sub($fn,$) {
       if( count($fn, '[\-\.\_\s]')==0 && count($fn, '[A-Z][a-z]')>1 ) {  # some (e.g. magazine) file names are 100% CamelCase-only
          $fn =~ s!([A-Z][a-z]+)!$1.!g;
@@ -164,6 +165,7 @@ my @filters = (
 
    sub($fn,$) { return $fn =~ m![^_]_[^_]! ? $fn =~ s!__+!-!rg : $fn; },
    sub($fn,$) { return $fn =~ s!$classToDot+!.!rg; },
+   sub($fn,$) { return $fn =~ s![-.]s[-.]!s.!rg; },
 
    sub($fn,$) { return $fn =~ s!\.?\-\.?!-!rg; },   # compress ' - ' to '-'
 
@@ -195,7 +197,7 @@ my @filters = (
 
    sub($fn,$) { return $fn =~ s!\((\d\d\d\d)\)$!.$1!rg; },  # alt yr-of-publ fn format
 
-   sub($fn,$) { return $fn =~ s![${q1}‘’“”]!!rg; },
+   sub($fn,$) { return $fn =~ s![‘’“”]!!rg; },
    sub($fn,$) { return $fn =~ s![\._-]+$!!rg; },
 
    sub($fn,$) { return $fn =~ s!([CcFf])#\.!$1sharp.!rg; },

@@ -12,8 +12,8 @@ my $cwd = getcwd();
 
 # Generate output filename with timestamp
 my $timestamp = strftime("%y%m%d_%H%M%S", localtime);
-my ($basename, $dir) = fileparse($input_file);
-my $output_file = $basename . "_" . $timestamp;
+my ($basename, $dir, $suffix) = fileparse($input_file, qr/\.[^.]*/);
+my $output_file = $basename . "_" . $timestamp . $suffix;
 $output_file = File::Spec->catfile($dir, $output_file);
 
 # Collect all file paths first to determine prefix handling

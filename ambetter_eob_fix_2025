@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# 20250110_1006 Fri new version given that Ambetter has finally fixed the rotation of pages in their EoB pdfs!
+#                   This seems to have happened circa 2024.12 so "2025" is not a "clean cut"
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+qpdf="qpdf.ai"  # AppImage version "installed" to get latest release from https://github.com/qpdf/qpdf/releases/
+qpdf="qpdf"     # apt-installed version
+
+command -v "$qpdf" > /dev/null || die "$qpdf needs to be installed"
+command -v "pdfgrep" > /dev/null || die "pdfgrep needs to be installed"
+
+firstgrepstr="Detail for Claims Processed on this Explanation of Benefits \(EOB\)"
+lastgrepstr="Understanding your Annual Deductible and Out-of-Pocket Limits"
+
+pdfgrep_pgnum() ( pdfgrep -nm1 "$1" "$2" | cut -d: -f1 )
+
+do1file() (
+   fullname="$1"
+   test -f "$fullname" || die "not a file: $fullname"
+   dirname="$(dirname -- "${fullname}")"    # ; echo "dirname   $dirname"
+   filename="$(basename -- "${fullname}")"  # ; echo "filename  $filename"
+   extension="${filename##*.}"              # ; echo "extension $extension"
+   basename="${filename%.*}"                # ; echo "basename  $basename"
+   # logical parameters:
+   rotdnm="$dirname/origrot" ; test -d "$rotdnm" || mkdir -p "$rotdnm"  # where rotated version of original file is created
+   outdnm="$dirname/reduced" ; test -d "$outdnm" || mkdir -p "$outdnm"  # where reduced+rotated version of original file is created
+   bakdnm="$dirname/backup"  ; test -d "$bakdnm" || mkdir -p "$bakdnm"  # where original file is moved
+
+   echo "fullname=$fullname"
+   firstpg="$(pdfgrep_pgnum "$firstgrepstr" "$fullname")" # ; echo "firstpg=$firstpg"
+   (( firstpg > 0 )) || die "invalid firstpg ($firstpg) in $fullname"
+   lastpg="$(pdfgrep_pgnum "$lastgrepstr" "$fullname")"   # ; echo "lastpg=$lastpg"
+   (( lastpg > 0 )) || die "invalid lastpg ($lastpg) in $fullname"
+   (( firstpg < lastpg )) || die "not enough pages ($firstpg < $lastpg) in $fullname"
+   # BAFFLINGLY, pdfgrep output VARIES DEPENDING ON INPUT FILE PAGE ROTATION(!!!).
+   # So a prerequisite for renaming the original file using `rename_ambetter_eob`
+   # (which was developed and tested on "reduced+rotated" files) is to create a
+   # correctly-rotated version of the original file (i.e. one removing no pages)
+   # and run `rename_ambetter_eob` on it (successfully)!  Goofy but it works.
+
+   if something; then
+
+   # 20250110_1009 Fri rotation now unnecessary
+   # see "$qpdf" "$fullname" --rotate=+90:2-$lastpg -- "$rotdnm/$filename" || die "$qpdf [rotdnm] failed"
+   # see rename_ambetter_eob "$rotdnm/$filename"
+   # 20250110_1009 Fri rotation now unnecessary
+   # see "$qpdf" "$fullname" --pages . "$firstpg"-"$lastpg" -- --rotate=+90 "$outdnm/$filename" || die "$qpdf [outdnm] failed"
+
+   fi
+
+   see "$qpdf" "$fullname" --pages . "$firstpg"-"$lastpg" -- "$outdnm/$filename" || die "$qpdf [outdnm] failed"
+   see rename_ambetter_eob "$outdnm/$filename"
+   see mv -n "$fullname" "$bakdnm/$filename" || die "backup move failed"
+   )
+
+[[ "$1" ]] || echo "missing name of file(s) to rotate"
+for fnm in "$@"; do
+   do1file "$fnm"
+done

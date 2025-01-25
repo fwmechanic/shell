@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+gs \
+  -sDEVICE=pdfwrite \
+  -dCompatibilityLevel=1.4 \
+  -o output.pdf \
+  -sPAPERSIZE=letter \
+  -dFIXEDMEDIA \
+  -dPDFFitPage \
+  -c "<</BeginPage{gsave 0.9 0.9 0.9 setrgbcolor clippath fill grestore}>> setpagedevice" \
+  -f "$1"

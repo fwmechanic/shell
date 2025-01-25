@@ -1,0 +1,66 @@
+#!/bin/bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+
+# Function to normalize JSON
+normalize_json() {
+    local file="$1"
+    local sort_arrays="$2"
+    local keys="$3"  # Comma-separated list of keys or key paths
+
+    local jq_filter=''
+    if [[ -n "$keys" ]]; then
+        # Create a jq filter to select specified keys
+        IFS=',' read -ra key_array <<< "$keys"
+        for key in "${key_array[@]}"; do
+            if [[ -n "$jq_filter" ]]; then
+                jq_filter+=", "
+            fi
+            jq_filter+="\"$key\": .$key"
+        done
+        jq_filter="{$jq_filter}"
+    else
+        jq_filter='.'
+    fi
+
+    if [[ "$sort_arrays" != "n" ]]; then
+       sort_arrays="| sort_by(.)"
+    fi
+    jq -S "
+        def normalize:
+          if type == \"array\" then
+            [.[] | normalize] | $sort_arrays
+          elif type == \"object\" then
+            to_entries
+            | map({key: .key, value: .value | normalize})
+            | from_entries
+          else
+            .
+          end;
+        $jq_filter | normalize
+    " "$file"
+}
+
+diff_json() {
+    test -d "$1" || die "$1 is not a dir"
+    test -d "$2" || die "$2 is not a dir"
+    local f1="$1/$3" ; test -f "$f1" || die "$f1 is not a file"
+    local f2="$2/$3" ; test -f "$f2" || die "$f2 is not a file"
+
+    local sort_arrays="${4:-n}"
+    local keys="$5"
+
+    if [[ -n "$keys" ]]; then
+        printf 'only keys: %s\n' "$keys"
+    fi
+    printf '\n'
+    diff -u \
+        --label "$f1" --label "$f2" \
+        <(normalize_json "$f1" "$sort_arrays" "$keys") \
+        <(normalize_json "$f2" "$sort_arrays" "$keys")
+}
+
+diff_json "$1" "$2" "package.json"   n "dependencies,devDependencies"
+diff_json "$1" "$2" "tsconfig.json"  y "compilerOptions.strict,compilerOptions.target"

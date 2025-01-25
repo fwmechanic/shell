@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+qpdf="qpdf.ai"  # AppImage version "installed" to get latest release from https://github.com/qpdf/qpdf/releases/
+qpdf="qpdf"     # apt-installed version
+
+command -v "$qpdf" > /dev/null || die "$qpdf needs to be installed"
+command -v "pdfgrep" > /dev/null || die "pdfgrep needs to be installed"
+
+firstgrepstr="Detail for Claims Processed on this Explanation of Benefits \(EOB\)"
+lastgrepstr="Understanding your Annual Deductible and Out-of-Pocket Limits"
+
+pdfgrep_pgnum() ( pdfgrep -nm1 "$1" "$2" | cut -d: -f1 )
+
+do1file() (
+   fullname="$1" ; shift
+   test -f "$fullname" || die "not a file: $fullname"
+   dirname="$(dirname -- "${fullname}")"    # ; echo "dirname   $dirname"
+   filename="$(basename -- "${fullname}")"  # ; echo "filename  $filename"
+   extension="${filename##*.}"              # ; echo "extension $extension"
+   basename="${filename%.*}"                # ; echo "basename  $basename"
+   # logical parameters:
+   outfnm="$dirname/${basename}_cut.pdf"
+   echo "fullname=$fullname"
+   echo "outfnm=$outfnm"
+   see "$qpdf" "$fullname" --pages . "$@" -- "$outfnm" || die "$qpdf [$outfnm] failed"
+   )
+
+do1file "$@"

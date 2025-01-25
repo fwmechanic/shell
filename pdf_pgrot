@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+PDF_FILE="20240217_Q.EOB.Vijay.Sanghi.X052MPE51241.pdf"
+PDF_FILE="X344MPE42209.pdf"
+PAGE_NUM=3
+
+# Extract the chunk of text describing just this page
+page_info="$(qpdf --show-pages "$PDF_FILE" \
+  | awk '/^Page '"$PAGE_NUM"':/{flag=1;next}/^$/{flag=0}flag')"
+
+# Get rotation (0, 90, 180, 270)
+rotation="$(echo "$page_info" | grep 'rotate=' | sed -E 's/.*rotate=([0-9]+).*/\1/')"
+
+# Extract the MediaBox coordinates, e.g. [0 0 612 792]
+# Then compute width = (right - left), height = (top - bottom)
+read -r left bottom right top < <(
+  echo "$page_info" \
+  | grep 'MediaBox:' \
+  | sed -E 's/.*MediaBox:\s*\[([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\].*/\1 \2 \3 \4/'
+)
+width=$(( right - left ))
+height=$(( top - bottom ))
+
+echo "width=$width height=$height"
+
+# Account for rotation: if rotated 90 or 270, swap width & height
+if [[ "$rotation" == "90" || "$rotation" == "270" ]]; then
+  tmp=$width
+  width=$height
+  height=$tmp
+fi
+
+# Determine orientation
+if [[ $width -gt $height ]]; then
+  orientation="landscape"
+else
+  orientation="portrait"
+fi
+
+echo "Page $PAGE_NUM is $orientation (rotation=$rotation)."

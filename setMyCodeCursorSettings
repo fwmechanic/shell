@@ -1,0 +1,301 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use File::Find;
+use JSON::PP;
+use Cwd qw(abs_path getcwd);
+use File::Spec;
+use File::Spec::Functions qw(abs2rel);  # Add this line with the other imports
+use File::Path qw(make_path);
+use File::Basename;
+
+# List of additional ignore files to process for user-level settings
+my @user_ignore_files = (
+    "$ENV{HOME}/gitignore_global",
+);
+
+# Initialize variables
+my %user_exclude_patterns;    # From user's global ignore files
+my %workspace_exclude_patterns;  # From workspace .gitignore files
+my %processed_files;          # Track processed files to avoid duplicates
+my %dangerous_pattern_sources;  # Track where dangerous patterns came from
+
+my @dangerous_patterns = ('*', '.*');
+
+# Get current working directory and git root
+my $cwd = getcwd();
+chomp(my $git_root = `git rev-parse --show-toplevel`);
+die "Not in a git repository" if $? != 0;
+$git_root = abs_path($git_root);
+
+# Ensure cwd is within git root
+my $rel_cwd = $cwd;
+$rel_cwd =~ s|^$git_root/||;
+
+print STDERR "Working in subdirectory: $rel_cwd\n";
+
+sub make_relative_to_git_root {
+    my $path = shift;
+    # First make it absolute if it isn't already
+    $path = File::Spec->rel2abs($path, $git_root) unless File::Spec->file_name_is_absolute($path);
+    # Then make it relative to git root
+    return abs2rel($path, $git_root);
+}
+
+sub convert_pattern {
+    my ($pattern, $rel_path, $file, $is_user_setting) = @_;  # Add is_user_setting parameter
+
+    # Remove comments and empty lines
+    return '' if $pattern =~ /^\s*#/ || $pattern =~ /^\s*$/;
+    $pattern =~ s/^\s+|\s+$//g;  # trim whitespace
+
+    # Handle negation patterns (we'll skip them as VS Code doesn't support them well)
+    return '' if $pattern =~ /^!/;
+
+    # Check for dangerous patterns
+    if (grep { $pattern eq $_ || $pattern =~ /^\/?\Q$_\E$/ } @dangerous_patterns) {
+        my $scope = $rel_path ? $rel_path : "global ignore file";
+        my $location = $file || "unknown file";
+        $dangerous_pattern_sources{$pattern} ||= [];
+        push @{$dangerous_pattern_sources{$pattern}}, $location;
+        print STDERR "\nWARNING: Potentially dangerous pattern '$pattern' in $scope\n";
+        print STDERR "         Found in: $location\n";
+        if ($rel_path && $rel_path ne '.') {
+            print STDERR "  Suggestion: Replace with more specific pattern like '$rel_path/*'\n";
+        } else {
+            print STDERR "  Suggestion: Replace with a more specific pattern\n";
+        }
+        return '';
+    }
+
+    # Convert .gitignore pattern to VS Code pattern
+    $pattern =~ s|^\./||;  # Remove leading ./
+    $pattern =~ s|^/||;    # Remove leading /
+
+    # For user settings, we want all patterns to be global
+    if ($is_user_setting) {
+        # Don't add **/ if it's already there
+        return $pattern =~ m|^\*\*/| ? $pattern : "**/$pattern";
+    }
+
+    # For workspace settings, keep the original logic
+    if ($pattern =~ m|^[^/]+$|) {
+        # Simple pattern with no path separators (e.g., *.txt)
+        return "**/$pattern";
+    }
+    elsif ($pattern =~ m|^\*\*/|) {
+        # Pattern starts with **/ - keep as is
+        return $pattern;
+    }
+    else {
+        # Directory-specific pattern
+        if ($rel_path && $rel_path ne '.') {
+            # Make sure rel_path is relative to git root
+            $rel_path = make_relative_to_git_root($rel_path);
+            # Remove any leading path components that match rel_path
+            $pattern =~ s|^$rel_path/||;
+            $pattern = "$rel_path/$pattern";
+        }
+
+        # Handle directory patterns consistently
+        if ($pattern =~ /\/$/ ||
+            $pattern =~ /\/(node_modules|dist|target|logs|store)\/?$/) {
+            return $pattern;
+        } else {
+            return "**/$pattern";
+        }
+    }
+}
+
+sub process_ignore_file {
+    my ($file, $desc, $rel_path, $patterns_ref, $is_user_setting) = @_;
+    return unless -f $file;
+
+    # Skip if already processed
+    my $abs_path = abs_path($file);
+    return if $processed_files{$abs_path}++;
+
+    # Ensure rel_path is relative to git root
+    $rel_path = make_relative_to_git_root($rel_path) if $rel_path;
+
+    print STDERR "Processing $desc: $file\n";
+
+    open(my $fh, '<', $file) or die "Cannot open $file: $!";
+    while (my $line = <$fh>) {
+        chomp $line;
+        my $pattern = convert_pattern($line, $rel_path, $file, $is_user_setting);
+        next unless $pattern;
+        print STDERR "Adding pattern: $pattern\n" if $ENV{DEBUG};
+        $patterns_ref->{$pattern} = JSON::PP::true;
+    }
+    close($fh);
+}
+
+sub find_nearest_settings_json {
+    my $dir = $cwd;
+    while (1) {
+        my $settings = "$dir/.vscode/settings.json";
+        return $settings if -f $settings;
+
+        my $vscode_dir = "$dir/.vscode";
+        return "$vscode_dir/settings.json" if -d $vscode_dir;
+
+        # Stop if we've reached git root or filesystem root
+        last if $dir eq $git_root || $dir eq '/';
+
+        # Go up one directory
+        $dir = dirname($dir);
+    }
+
+    # If no existing settings.json found, create one in current directory
+    return "$cwd/.vscode/settings.json";
+}
+
+sub update_settings_json {
+    my ($settings_file, $is_user_settings) = @_;
+
+    # Create directory if needed
+    my $dir = dirname($settings_file);
+    make_path($dir) unless -d $dir;
+
+    # Read existing settings
+    my $existing_settings = {};
+    if (-f $settings_file) {
+        local $/;
+        open(my $fh, '<', $settings_file) or die "Cannot open $settings_file: $!";
+        my $json_text = <$fh>;
+        close($fh);
+
+        if ($json_text =~ /\S/) {
+            eval {
+                $existing_settings = JSON::PP->new->decode($json_text);
+            };
+            if ($@) {
+                my $backup = "$settings_file.bak." . time();
+                rename $settings_file, $backup;
+                print STDERR "Backed up problematic settings to $backup\n";
+                $existing_settings = {};
+            }
+        }
+    }
+
+    # Helper to sort patterns
+    sub sort_patterns {
+        my @patterns = @_;
+        return sort {
+            # Split patterns into components
+            my ($a_dirs) = $a =~ m{^(?:\*\*/)?(.+?)/?$};
+            my ($b_dirs) = $b =~ m{^(?:\*\*/)?(.+?)/?$};
+
+            # Count path segments
+            my $a_depth = ($a_dirs =~ tr{/}{});
+            my $b_depth = ($b_dirs =~ tr{/}{});
+
+            # Sort by:
+            # 1. Root patterns first (starting with **/)
+            # 2. Then by directory depth (shallower first)
+            # 3. Then alphabetically
+            ($a !~ m{^\*\*/} cmp $b !~ m{^\*\*/}) ||  # **/ patterns first
+            ($a_depth <=> $b_depth) ||                 # Then by depth
+            ($a_dirs cmp $b_dirs)                      # Then alphabetically
+        } @patterns;
+    }
+
+    # Sort the patterns and rebuild the exclude hash
+    my $patterns_ref = $is_user_settings ? \%user_exclude_patterns : \%workspace_exclude_patterns;
+    my %sorted_excludes = map { $_ => JSON::PP::true }
+                         sort_patterns(keys %$patterns_ref);
+
+    # Replace search.exclude while preserving other settings
+    $existing_settings->{'search.useIgnoreFiles'} = JSON::PP::true;
+    $existing_settings->{'search.useGlobalIgnoreFiles'} = JSON::PP::true;
+    $existing_settings->{'search.exclude'} = \%sorted_excludes;
+
+    # Write updated settings with sorted patterns
+    open(my $fh, '>', $settings_file) or die "Cannot write to $settings_file: $!";
+    print $fh JSON::PP->new->pretty->canonical->encode($existing_settings);
+    close($fh);
+
+    print STDERR "Updated $settings_file\n";
+}
+
+# Process patterns for workspace settings
+sub process_workspace_ignores {
+    %workspace_exclude_patterns = ();
+
+    # First, collect all .gitignore files between cwd and git root
+    my @parent_ignores;
+    my $dir = $cwd;
+    while (1) {
+        if (-f "$dir/.gitignore") {
+            unshift @parent_ignores, {
+                file => "$dir/.gitignore",
+                rel_path => make_relative_to_git_root($dir)
+            };
+        }
+        last if $dir eq $git_root;
+        $dir = dirname($dir);
+    }
+
+    # Process parent .gitignore files first (root to cwd)
+    for my $ignore (@parent_ignores) {
+        process_ignore_file($ignore->{file},
+                          "Git worktree ignore file",
+                          $ignore->{rel_path},
+                          \%workspace_exclude_patterns);
+    }
+
+    # Now find .gitignore files in subdirectories of cwd, but with restrictions
+    find({
+        wanted => sub {
+            return unless $_ eq '.gitignore';
+
+            # Skip if not in cwd's subtree
+            return if $File::Find::dir lt $cwd;
+
+            # Skip node_modules directories
+            return if $File::Find::dir =~ m|/node_modules/|;
+
+            # Skip other common dependency directories if needed
+            return if $File::Find::dir =~ m{/(?:vendor|bower_components)/};
+
+            my $rel_path = $File::Find::name;
+            $rel_path =~ s|^$git_root/||;
+            my $dir_path = $rel_path;
+            $dir_path =~ s|/\.gitignore$||;
+
+            process_ignore_file($_,
+                              "Git worktree ignore file at $rel_path",
+                              $dir_path,
+                              \%workspace_exclude_patterns);
+        },
+        no_chdir => 1
+    }, $cwd);
+}
+
+# First handle user settings
+for my $file (@user_ignore_files) {
+    process_ignore_file($file, "User ignore file", '', \%user_exclude_patterns, 1);  # Note the 1 at the end
+}
+
+my $home = $ENV{HOME};
+update_settings_json("$home/.config/Code/User/settings.json", 1);
+update_settings_json("$home/.config/Cursor/User/settings.json", 1);
+
+# Then handle nearest workspace settings
+process_workspace_ignores();
+my $workspace_settings = find_nearest_settings_json();
+print STDERR "Updating workspace settings: $workspace_settings\n";
+update_settings_json($workspace_settings, 0);
+
+# Print summary of dangerous patterns
+if (%dangerous_pattern_sources) {
+    print STDERR "\nWARNING: Dangerous patterns were found:\n";
+    for my $pattern (sort keys %dangerous_pattern_sources) {
+        print STDERR "  $pattern found in:\n";
+        for my $file (@{$dangerous_pattern_sources{$pattern}}) {
+            print STDERR "    - $file\n";
+        }
+    }
+    print STDERR "\nConsider replacing these patterns with more specific ones.\n";
+}
