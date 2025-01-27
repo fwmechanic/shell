@@ -7,12 +7,6 @@ qpdf="qpdf.ai"  # AppImage version "installed" to get latest release from https:
 qpdf="qpdf"     # apt-installed version
 
 command -v "$qpdf" > /dev/null || die "$qpdf needs to be installed"
-command -v "pdfgrep" > /dev/null || die "pdfgrep needs to be installed"
-
-firstgrepstr="Detail for Claims Processed on this Explanation of Benefits \(EOB\)"
-lastgrepstr="Understanding your Annual Deductible and Out-of-Pocket Limits"
-
-pdfgrep_pgnum() ( pdfgrep -nm1 "$1" "$2" | cut -d: -f1 )
 
 do1file() (
    fullname="$1" ; shift
