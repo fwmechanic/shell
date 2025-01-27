@@ -106,12 +106,14 @@ while (1) {
         @protected_branches,                              # local branches
         (map { my $r = $_; map { "$r/$_" } @protected_branches } keys %remotes);  # remote branches
 
+       $protected_re = '(?:' . $protected_re . ')';
+
     print "Protected branches regex: $protected_re\n" if $debug;
 
     # Filter out protected branches but keep original format for display
     my @available_branches = grep {
         my ($branch) = /^\d{8}_\d{6}\s+(.+)$/;
-        $branch !~ /$protected_re/;
+        $branch !~ /^${protected_re}$/;
     } @branches;
 
     # Show available branches
