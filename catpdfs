@@ -10,4 +10,10 @@ qpdf="qpdf-11.9.1-x86_64.AppImage"  # AppImage version "installed" to get latest
 
 command -v "$qpdf" > /dev/null || die "$qpdf needs to be installed"
 
+test    "$2" || die "need at least 2 filenames"
+test -f "$1" || die "missing file $1"
+test -f "$2" || die "missing file $2"
+
 see "$qpdf" --empty --pages "$@" -- "output.pdf" || die "$qpdf [$outfnm] failed"
+
+echo "wrote output.pdf"

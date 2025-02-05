@@ -47,7 +47,7 @@ case $rotmode in
   \?)  help       ;;
 esac
 [[ "$rotdeg" ]] || help
-[[ "$1" ]] || echo "missing name of file(s) to rotate"
+[[ "$1" ]] || die "missing name of file(s) to rotate"
 
 for fnm in "$@"; do
    do1file "$fnm"
