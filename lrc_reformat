@@ -1,0 +1,76 @@
+#!/usr/bin/env -S uv --quiet run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+# ]
+# ///
+#
+
+import argparse
+import re
+import textwrap
+
+def process_block(block, width):
+    """
+    Process a block (paragraph) of LRC lines.
+    Each line is assumed to be in the form:
+      [timestamp] text
+    Only the timestamp of the first line is kept;
+    the texts of all lines are joined and then wrapped.
+    """
+    timestamp = None
+    texts = []
+    for line in block:
+        # Expect a timestamp like [00:27.24] followed by text.
+        m = re.match(r'(\[\d{2}:\d{2}\.\d{2}\])\s*(.*)', line)
+        if m:
+            if timestamp is None:
+                timestamp = m.group(1)
+            texts.append(m.group(2))
+        else:
+            # If a line does not match, include it as-is.
+            texts.append(line.strip())
+    combined_text = " ".join(texts).strip()
+
+    if timestamp is None:
+        # No timestamp found; wrap without prefix.
+        return textwrap.fill(combined_text, width=width)
+
+    # Prepare a prefix: the first line gets the timestamp and a space.
+    prefix = f"{timestamp} "
+    # Subsequent lines are indented to align with the text.
+    indent = " " * len(prefix)
+    wrapper = textwrap.TextWrapper(width=width, initial_indent=prefix, subsequent_indent=indent)
+    return wrapper.fill(combined_text)
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Reformat an LRC transcription file by merging paragraph blocks and wrapping lines."
+    )
+    parser.add_argument("input", help="Input LRC file")
+    parser.add_argument("-w", "--width", type=int, default=80,
+                        help="Maximum overall line width (default 80)")
+    args = parser.parse_args()
+
+    with open(args.input, "r") as f:
+        lines = [line.rstrip("\n") for line in f]
+
+    # Split file into blocks using blank lines as separators.
+    blocks = []
+    current = []
+    for line in lines:
+        if line.strip() == "":
+            if current:
+                blocks.append(current)
+                current = []
+        else:
+            current.append(line)
+    if current:
+        blocks.append(current)
+
+    # Process each block and join the results with a blank line in between.
+    reformatted = "\n\n".join(process_block(block, args.width) for block in blocks)
+    print(reformatted)
+
+if __name__ == "__main__":
+    main()
