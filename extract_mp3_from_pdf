@@ -1,0 +1,36 @@
+#!/bin/bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+
+qpdf="qpdf-11.9.1-x86_64.AppImage"  # AppImage version "installed" to get latest release from https://github.com/qpdf/qpdf/releases/
+                # qpdf-11.9.1 PRESERVES INTERNAL LINKS IN INCOMING PDFS (big win)!!!
+
+dieifnotinpath "$qpdf"
+
+# This script extracts the first mp3 attachment from a given PDF file.
+# The output filename is based on the input filename (e.g. input.pdf -> input.mp3).
+
+do1file() {
+  # Ensure a PDF file is provided
+  test    "$1" || die "Usage: $0 <PDF_FILE>"
+  test -f "$1" || die "File not found: $1"
+  local PDF_FILE="$1"
+
+  # Generate output filename by replacing the extension with .mp3
+  local OUTPUT_FILE="${PDF_FILE%.*}.mp3"
+
+  # List attachments and extract the first line that contains an mp3 filename.
+  # Suppress warning lines by redirecting stderr.
+  local ATTACHMENT=$("$qpdf" --list-attachments "$PDF_FILE" 2>/dev/null | grep -Eo '^[^ ]+\.mp3' | head -n 1)
+  test "$ATTACHMENT" || die "No mp3 attachment found in $PDF_FILE"
+  echo "Found mp3 attachment: $ATTACHMENT"
+  echo "Extracting to: $OUTPUT_FILE"
+  "$qpdf" --show-attachment="$ATTACHMENT" "$PDF_FILE" > "$OUTPUT_FILE"
+  echo "Extraction complete."
+  }
+
+for fnm in "$@"; do
+   do1file "$fnm"
+done
