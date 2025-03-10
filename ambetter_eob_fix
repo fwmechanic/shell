@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# 20250110_1006 Fri new version given that Ambetter has finally fixed the rotation of pages in their EoB pdfs!
+#                   This seems to have happened circa 2024.12 so "2025" is not a "clean cut"
+
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 
@@ -22,7 +25,6 @@ do1file() (
    extension="${filename##*.}"              # ; echo "extension $extension"
    basename="${filename%.*}"                # ; echo "basename  $basename"
    # logical parameters:
-   rotdnm="$dirname/origrot" ; test -d "$rotdnm" || mkdir -p "$rotdnm"  # where rotated version of original file is created
    outdnm="$dirname/reduced" ; test -d "$outdnm" || mkdir -p "$outdnm"  # where reduced+rotated version of original file is created
    bakdnm="$dirname/backup"  ; test -d "$bakdnm" || mkdir -p "$bakdnm"  # where original file is moved
 
@@ -37,9 +39,17 @@ do1file() (
    # (which was developed and tested on "reduced+rotated" files) is to create a
    # correctly-rotated version of the original file (i.e. one removing no pages)
    # and run `rename_ambetter_eob` on it (successfully)!  Goofy but it works.
-   see "$qpdf" "$fullname" --rotate=+90:2-$lastpg -- "$rotdnm/$filename" || die "$qpdf [rotdnm] failed"
-   see rename_ambetter_eob "$rotdnm/$filename"
-   see "$qpdf" "$fullname" --pages . "$firstpg"-"$lastpg" -- --rotate=+90 "$outdnm/$filename" || die "$qpdf [outdnm] failed"
+
+   if false; then
+     # 20250110_1009 Fri rotation now unnecessary as late in 2024 Ambetter came to their senses
+     rotdnm="$dirname/origrot" ; test -d "$rotdnm" || mkdir -p "$rotdnm"  # where rotated version of original file is created
+     see "$qpdf" "$fullname" --rotate=+90:2-$lastpg -- "$rotdnm/$filename" || die "$qpdf [rotdnm] failed"
+     see rename_ambetter_eob "$rotdnm/$filename"
+     20250110_1009 Fri rotation now unnecessary
+     see "$qpdf" "$fullname" --pages . "$firstpg"-"$lastpg" -- --rotate=+90 "$outdnm/$filename" || die "$qpdf [outdnm] failed"
+   fi
+
+   see "$qpdf" "$fullname" --pages . "$firstpg"-"$lastpg" -- "$outdnm/$filename" || die "$qpdf [outdnm] failed"
    see rename_ambetter_eob "$outdnm/$filename"
    see mv -n "$fullname" "$bakdnm/$filename" || die "backup move failed"
    )
