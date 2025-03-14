@@ -45,7 +45,6 @@ do1file() (
      rotdnm="$dirname/origrot" ; test -d "$rotdnm" || mkdir -p "$rotdnm"  # where rotated version of original file is created
      see "$qpdf" "$fullname" --rotate=+90:2-$lastpg -- "$rotdnm/$filename" || die "$qpdf [rotdnm] failed"
      see rename_ambetter_eob "$rotdnm/$filename"
-     20250110_1009 Fri rotation now unnecessary
      see "$qpdf" "$fullname" --pages . "$firstpg"-"$lastpg" -- --rotate=+90 "$outdnm/$filename" || die "$qpdf [outdnm] failed"
    fi
 
