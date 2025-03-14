@@ -111,6 +111,25 @@ json='{
   "model": "'"$LLM_MODEL"'",
   "temperature": 0.0,
   "modalities": ["text"],
+  "functions": [
+    {
+      "name": "bool_evaluation",
+      "description": "Returns a boolean indicating if the statement is true (true) or not (false).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "is_true": {
+            "type": "boolean",
+            "description": "True if the user'\''s statement is correct; false otherwise."
+          }
+        },
+        "required": ["is_true"]
+      }
+    }
+  ],
+  "function_call": {
+    "name": "bool_evaluation"
+  },
   "messages": [
     {
       "role": "user",
@@ -130,7 +149,15 @@ json='{
 
 # printf "%s" "$json"
 
-curl "https://api.openai.com/v1/chat/completions" \
+curl -s "https://api.openai.com/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -d "$json" | jq -r '.model, (.choices[].message.content)'
+  -d "$json" \
+  -o response.json \
+  -w "time_namelookup: %{time_namelookup}\n \
+time_connect: %{time_connect}\n \
+time_starttransfer: %{time_starttransfer}\n \
+total_time: %{time_total}\n"
+
+jq -r '.model, (.choices[].message.function_call.arguments)' response.json
+# | jq -r '.model, (.choices[].message.content)'
