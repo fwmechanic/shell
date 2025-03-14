@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+
+# this works, demo's
+# 1: conversion of 's16pcm' aka 'pcm' aka 's16le PCM monaural' audio data pyld to WAV format
+#    merely by prepending a pyld-specific WAV header to the pcm audio data pyld.
+# 2: asking LLM a question about what is said in the audio clip:
+#    `audio-ask speech.pcm "does the speaker say 'red'?"`
+#      yields
+# {
+#   "id": "chatcmpl-BB5gAf0Slhk4vQgLcVpBNPpVPaReP",
+#   "object": "chat.completion",
+#   "created": 1741983138,
+#   "model": "gpt-4o-mini-audio-preview-2024-12-17",
+#   "choices": [
+#     {
+#       "index": 0,
+#       "message": {
+#         "role": "assistant",
+#         "content": "Yes, the speaker says \"red\".",
+#         "refusal": null,
+#         "annotations": []
+#       },
+#       "finish_reason": "stop"
+#     }
+#   ],  ...
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+test -f "$1" || die "missing audio filename"
+test "$2" || die "missing query"
+
+set -euo pipefail
+
+# For a 16-bit little-endian field
+le16() {
+  local v=$1
+  # lower byte, then upper byte
+  printf '\\x%02x\\x%02x' \
+    $((v & 0xff)) \
+    $(((v >> 8) & 0xff))
+}
+
+# For a 32-bit little-endian field
+le32() {
+  local v=$1
+  # bytes 0..3 in reverse order
+  printf '\\x%02x\\x%02x\\x%02x\\x%02x' \
+    $((v & 0xff)) \
+    $(((v >> 8) & 0xff)) \
+    $(((v >> 16) & 0xff)) \
+    $(((v >> 24) & 0xff))
+}
+
+
+# 1) Path to raw PCM (defaults to first arg).
+INFILE="${1:-audio.pcm}"
+
+# 2) WAV parameters (must match your raw PCM data exactly).
+SAMPLERATE=24000
+CHANNELS=1
+BITDEPTH=16
+
+# 3) Sizes for header fields
+DATA_SIZE=$(stat -c%s "$INFILE")      # raw PCM bytes
+RIFF_SIZE=$((DATA_SIZE + 36))        # file size minus the first 8 bytes
+BLOCK_ALIGN=$((CHANNELS * BITDEPTH / 8))
+BYTE_RATE=$((SAMPLERATE * BLOCK_ALIGN))
+
+# 4) Create the WAV
+{
+  # "RIFF"
+  printf 'RIFF'
+  # 4-byte chunk size in LE
+  printf '%b' "$(le32 "$RIFF_SIZE")"
+  # "WAVE"
+  printf 'WAVE'
+  # "fmt " + Subchunk1Size (16 for PCM)
+  printf 'fmt '
+  printf '%b' "$(le32 16)"
+  # AudioFormat=1 => PCM (2 bytes)
+  printf '%b' "$(le16 1)"
+  # NumChannels
+  printf '%b' "$(le16 "$CHANNELS")"
+  # SampleRate
+  printf '%b' "$(le32 "$SAMPLERATE")"
+  # ByteRate
+  printf '%b' "$(le32 "$BYTE_RATE")"
+  # BlockAlign
+  printf '%b' "$(le16 "$BLOCK_ALIGN")"
+  # BitsPerSample
+  printf '%b' "$(le16 "$BITDEPTH")"
+  # "data" + 4-byte data-size
+  printf 'data'
+  printf '%b' "$(le32 "$DATA_SIZE")"
+
+  # Lastly, your raw PCM
+  cat "$INFILE"
+} > output.wav
+
+# read back in base64 format for incorporation into json (bash strings CANNOT contain binary data)
+WAV_B64="$(base64 -w 0 "output.wav")"
+
+# 5) Print the final Base64 to stdout (or do whatever you like with it)
+# echo "$WAV_B64"
+
+LLM_MODEL='gpt-4o-audio-preview'
+LLM_MODEL='gpt-4o-mini-audio-preview'
+
+json='{
+  "model": "'"$LLM_MODEL"'",
+  "temperature": 0.0,
+  "modalities": ["text"],
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "'"$2"'" },
+        {
+          "type": "input_audio",
+          "input_audio": {
+            "data": "'"$WAV_B64"'",
+            "format": "wav"
+          }
+        }
+      ]
+    }
+  ]
+}'
+
+# printf "%s" "$json"
+
+curl "https://api.openai.com/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d "$json" | jq -r '.model, (.choices[].message.content)'
