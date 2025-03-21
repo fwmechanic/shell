@@ -1,0 +1,85 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+print "Analyzing LFS file status...\n";
+
+# Get LFS status text output - it has all we need
+my $lfs_status = `git lfs status`;
+my %files_to_process;
+
+# Parse the sections separately for better accuracy
+my ($staged_section) = ($lfs_status =~ /Objects to be committed:(.*?)(?:Objects not staged for commit:|$)/s);
+my ($unstaged_section) = ($lfs_status =~ /Objects not staged for commit:(.*?)$/s);
+
+# Process staged files
+while ($staged_section && $staged_section =~ /^\s+(.+?) \(LFS: ([a-f0-9]+) -> (?:Git|File): ([a-f0-9]+)\)/gm) {
+    my ($file, $lfs_hash, $git_hash) = ($1, $2, $3);
+
+    # If the hashes match, this file hasn't actually changed
+    if ($lfs_hash eq $git_hash) {
+        $files_to_process{$file} = {
+            lfs_hash => $lfs_hash,
+            git_hash => $git_hash,
+            staged => 1
+        };
+    }
+}
+
+# Process unstaged files
+while ($unstaged_section && $unstaged_section =~ /^\s+(.+?) \((?:Git|LFS): ([a-f0-9]+) -> (?:Git|File): ([a-f0-9]+)\)/gm) {
+    my ($file, $hash1, $hash2) = ($1, $2, $3);
+
+    # Skip if already processed as staged
+    next if exists $files_to_process{$file};
+
+    # If the hashes match, this file hasn't actually changed
+    if ($hash1 eq $hash2) {
+        $files_to_process{$file} = {
+            lfs_hash => $hash1,
+            git_hash => $hash2,
+            staged => 0
+        };
+    }
+}
+
+my $unstaged = 0;
+my $restored = 0;
+
+foreach my $file (sort keys %files_to_process) {
+    my $info = $files_to_process{$file};
+
+    print "\nProcessing: $file\n";
+    print "  -> Hash verification: Same content (LFS: $info->{lfs_hash}, Git: $info->{git_hash})\n";
+    print "  -> Status: " . ($info->{staged} ? "Staged" : "Not staged") . "\n";
+
+    if ($info->{staged}) {
+        print "  -> Action: Unstaging file\n";
+        system('git', 'restore', '--staged', $file);
+        if ($? == 0) {
+            print "    ? Successfully unstaged\n";
+            $unstaged++;
+        } else {
+            print "    ? Failed to unstage (error code: $?)\n";
+        }
+    }
+
+    # Whether it was staged or not, restore it since the hashes match
+    print "  -> Action: Restoring file content\n";
+    system('git', 'restore', $file);
+    if ($? == 0) {
+        print "    ? Successfully restored\n";
+        $restored++;
+    } else {
+        print "    ? Failed to restore (error code: $?)\n";
+    }
+}
+
+print "\nSummary:\n";
+print "Total LFS files processed: " . scalar(keys %files_to_process) . "\n";
+print "Files unstaged: $unstaged\n";
+print "Files restored: $restored\n";
+
+# Show actual git status instead of assuming everything's clean
+print "\nCurrent repository status:\n";
+system('git', 'status', '--short', '--branch');
