@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Resample all jpg files to a particular pixel count goal (default 262144)
+
+pixel_count="${1:-262144}"  # 262144 (512x512, a thld of gpt-4o's { "detail": "low" } )
+color_option="${2:-original}"
+
+for file in *.jpg; do
+    # Skip files that already start with "resize_"
+    if [[ "$file" == resize_* ]]; then
+        continue
+    fi
+
+    case "$color_option" in
+        "gray"|"grey"|"grayscale"|"greyscale")
+            convert "$file" -resize "$pixel_count"@ -colorspace Gray "resize_${pixel_count}_gray_$file"
+            ;;
+        "mono"|"monochrome"|"bw")
+            convert "$file" -resize "$pixel_count"@ -monochrome "resize_${pixel_count}_mono_$file"
+            ;;
+        [0-9]*)
+            convert "$file" -resize "$pixel_count"@ -colors "$color_option" "resize_${pixel_count}_${color_option}colors_$file"
+            ;;
+        *)
+            convert "$file" -resize "$pixel_count"@ "resize_${pixel_count}_$file"
+            ;;
+    esac
+done

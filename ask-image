@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+test -f "$1" || die "missing image filename"
+# test "$2" || die "missing prompt"
+
+image_fnm="$1"
+prompt="${2:-is there a bird looking at the camera?}"
+JPG_B64="$(base64 -w 0 "${image_fnm}")"
+
+# https://platform.openai.com/docs/guides/images?api-mode=responses&lang=curl&format=url
+
+curl https://api.openai.com/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "store": false,
+    "temperature": 0.0,
+    "input": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "input_text", "text": "'"$prompt"'"},
+          {
+            "type": "input_image",
+            "image_url": "data:image/jpeg;base64,'"$JPG_B64"'",
+            "detail": "low"
+          }
+        ]
+      }
+    ],
+    "text": {
+      "format": {
+        "type": "json_schema",
+        "name": "boolean_response",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "response": {
+                    "type": "boolean"
+                }
+            },
+            "required": ["response"],
+            "additionalProperties": false
+        },
+        "strict": true
+      }
+    }
+  }'
+
+
+exit
+
+sample output:
+
+kg@pop-os:~/Downloads/parrot-images$ ./ask-image resize_262144_gray_African+Grey+Parrot+2+eyes.jpg
+{
+  "id": "resp_67eb1179a088819195a16a79b960c80006ff9640fa41bc6f",
+  "object": "response",
+  "created_at": 1743458681,
+  "status": "completed",
+  "error": null,
+  "incomplete_details": null,
+  "instructions": null,
+  "max_output_tokens": null,
+  "model": "gpt-4o-mini-2024-07-18",
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_67eb117a5db481918859e004de75bb9706ff9640fa41bc6f",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "{\"response\":true}",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "parallel_tool_calls": true,
+  "previous_response_id": null,
+  "reasoning": {
+    "effort": null,
+    "generate_summary": null
+  },
+  "store": false,
+  "temperature": 0.0,
+  "text": {
+    "format": {
+      "type": "json_schema",
+      "description": null,
+      "name": "boolean_response",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "response"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  },
+  "tool_choice": "auto",
+  "tools": [],
+  "top_p": 1.0,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 2849,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 6,
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "total_tokens": 2855
+  },
+  "user": null,
+  "metadata": {}
+}
