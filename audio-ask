@@ -52,9 +52,8 @@ le32() {
     $(((v >> 24) & 0xff))
 }
 
-
-# 1) Path to raw PCM (defaults to first arg).
-INFILE="${1:-audio.pcm}"
+# 1) Path to raw PCM
+INFILE="$1"
 
 # 2) WAV parameters (must match your raw PCM data exactly).
 SAMPLERATE=24000
@@ -62,37 +61,26 @@ CHANNELS=1
 BITDEPTH=16
 
 # 3) Sizes for header fields
-DATA_SIZE=$(stat -c%s "$INFILE")      # raw PCM bytes
-RIFF_SIZE=$((DATA_SIZE + 36))        # file size minus the first 8 bytes
+DATA_SIZE=$(stat -c%s "$INFILE")          # raw PCM bytes
+RIFF_SIZE=$((DATA_SIZE + 36))             # file size minus the first 8 bytes
 BLOCK_ALIGN=$((CHANNELS * BITDEPTH / 8))
 BYTE_RATE=$((SAMPLERATE * BLOCK_ALIGN))
 
 # 4) Create the WAV
 {
-  # "RIFF"
-  printf 'RIFF'
-  # 4-byte chunk size in LE
-  printf '%b' "$(le32 "$RIFF_SIZE")"
-  # "WAVE"
-  printf 'WAVE'
-  # "fmt " + Subchunk1Size (16 for PCM)
-  printf 'fmt '
-  printf '%b' "$(le32 16)"
-  # AudioFormat=1 => PCM (2 bytes)
-  printf '%b' "$(le16 1)"
-  # NumChannels
-  printf '%b' "$(le16 "$CHANNELS")"
-  # SampleRate
-  printf '%b' "$(le32 "$SAMPLERATE")"
-  # ByteRate
-  printf '%b' "$(le32 "$BYTE_RATE")"
-  # BlockAlign
-  printf '%b' "$(le16 "$BLOCK_ALIGN")"
-  # BitsPerSample
-  printf '%b' "$(le16 "$BITDEPTH")"
-  # "data" + 4-byte data-size
-  printf 'data'
-  printf '%b' "$(le32 "$DATA_SIZE")"
+  printf 'RIFF'                           # "RIFF"
+  printf '%b' "$(le32 "$RIFF_SIZE")"      # 4-byte chunk size in LE
+  printf 'WAVE'                           # "WAVE"
+  printf 'fmt '                           # "fmt "
+  printf '%b' "$(le32 16)"                # Subchunk1Size (16 for PCM)
+  printf '%b' "$(le16 1)"                 # AudioFormat=1 => PCM (2 bytes)
+  printf '%b' "$(le16 "$CHANNELS")"       # NumChannels
+  printf '%b' "$(le32 "$SAMPLERATE")"     # SampleRate
+  printf '%b' "$(le32 "$BYTE_RATE")"      # ByteRate
+  printf '%b' "$(le16 "$BLOCK_ALIGN")"    # BlockAlign
+  printf '%b' "$(le16 "$BITDEPTH")"       # BitsPerSample
+  printf 'data'                           # "data"
+  printf '%b' "$(le32 "$DATA_SIZE")"      # 4-byte data-size
 
   # Lastly, your raw PCM
   cat "$INFILE"
@@ -154,10 +142,7 @@ curl -s "https://api.openai.com/v1/chat/completions" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
   -d "$json" \
   -o response.json \
-  -w "time_namelookup: %{time_namelookup}\n \
-time_connect: %{time_connect}\n \
-time_starttransfer: %{time_starttransfer}\n \
-total_time: %{time_total}\n"
+  -w "%total_time: %{time_total}\n"
 
 jq -r '.model, (.choices[].message.function_call.arguments)' response.json
 # | jq -r '.model, (.choices[].message.content)'
