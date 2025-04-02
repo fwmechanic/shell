@@ -1,0 +1,457 @@
+#!/usr/bin/env -S uv --quiet run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "ruamel.yaml",
+# ]
+# ///
+#
+
+#!/usr/bin/env python3
+import argparse
+import sys
+import re
+import datetime
+import glob
+from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
+
+# -----------------------------------------------------------------------------
+# Utility function to load a YAML file with detailed error reporting.
+# -----------------------------------------------------------------------------
+def load_yaml_file(filename):
+    yaml = YAML(typ="safe")
+    try:
+        with open(filename, 'r') as f:
+            data = yaml.load(f)
+            if data is None:
+                data = []
+            return data
+    except YAMLError as e:
+        sys.exit(f"YAML syntax error in {filename}:\n{e}")
+    except Exception as e:
+        sys.exit(f"Error reading {filename}: {e}")
+
+# -----------------------------------------------------------------------------
+# Helper routines to coerce and format numeric values.
+# -----------------------------------------------------------------------------
+def format_dt(val):
+    """Format dt (payment date) as a string in yyyymmdd."""
+    if isinstance(val, str):
+        dt_str = val
+    else:
+        try:
+            dt_str = f"{int(val):08d}"
+        except Exception:
+            raise ValueError(f"Invalid dt value: {val}")
+    if not re.match(r'^\d{8}$', dt_str):
+        raise ValueError(f"Invalid dt format: {dt_str} (expected yyyymmdd)")
+    try:
+        datetime.datetime.strptime(dt_str, "%Y%m%d")
+    except Exception:
+        raise ValueError(f"Invalid dt date: {dt_str}")
+    return dt_str
+
+def format_amt(val):
+    """Format amt (amount) as a string in ddd.cc format."""
+    if isinstance(val, str):
+        amt_str = val
+    else:
+        try:
+            amt_str = f"{float(val):06.2f}"
+        except Exception:
+            raise ValueError(f"Invalid amt value: {val}")
+    if not re.match(r'^\d{3}\.\d{2}$', amt_str):
+        raise ValueError(f"Invalid amt format: {amt_str} (expected ddd.cc)")
+    return amt_str
+
+def format_dtEff(val):
+    """Format dtEff (effective date) as a string in yy.mm format."""
+    if isinstance(val, str):
+        dtEff_str = val
+    else:
+        try:
+            dtEff_str = f"{float(val):05.2f}"
+        except Exception:
+            raise ValueError(f"Invalid dtEff value: {val}")
+    if not re.match(r'^\d{2}\.\d{2}$', dtEff_str):
+        raise ValueError(f"Invalid dtEff format: {dtEff_str} (expected yy.mm)")
+    return dtEff_str
+
+def format_yy_mm(val):
+    """Format a value as a string in yy.mm format (for first/last fields)."""
+    if isinstance(val, str):
+        yy_mm_str = val
+    else:
+        try:
+            # If provided as a float or int, assume the integer part is year and the fractional part is month.
+            year = int(val)
+            month = round((float(val) - year) * 100)
+            yy_mm_str = f"{year:02d}.{month:02d}"
+        except Exception:
+            raise ValueError(f"Invalid yy.mm value: {val}")
+    if not re.match(r'^\d{2}\.\d{2}$', yy_mm_str):
+        raise ValueError(f"Invalid yy.mm format: {yy_mm_str} (expected yy.mm)")
+    return yy_mm_str
+
+# -----------------------------------------------------------------------------
+# Validation for payment records.
+# -----------------------------------------------------------------------------
+def validate_payment(payment, allowed_enums, record_index, filename):
+    required_fields = ['nm', 'dt', 'amt', 'to', 'via']
+    for field in required_fields:
+        if field not in payment:
+            raise ValueError(f"{filename} record {record_index}: Missing required field '{field}'")
+    # Validate and coerce 'nm' (lodger name)
+    nm = payment['nm']
+    if not isinstance(nm, str):
+        nm = str(nm)
+    if not re.match(r'^\S+$', nm):
+        raise ValueError(f"{filename} record {record_index}: Invalid lodger name '{nm}' (should contain no spaces)")
+    if nm not in allowed_enums.get('nm', []):
+        raise ValueError(f"{filename} record {record_index}: Unknown lodger name '{nm}'")
+    payment['nm'] = nm
+
+    # Validate and coerce 'dt' (payment date)
+    try:
+        payment['dt'] = format_dt(payment['dt'])
+    except ValueError as e:
+        raise ValueError(f"{filename} record {record_index}: {e}")
+
+    # Validate and coerce 'amt' (amount)
+    try:
+        payment['amt'] = format_amt(payment['amt'])
+    except ValueError as e:
+        raise ValueError(f"{filename} record {record_index}: {e}")
+
+    # Validate 'to' (recipient)
+    to_val = payment['to']
+    if not isinstance(to_val, str):
+        to_val = str(to_val)
+    if not re.match(r'^\S+$', to_val):
+        raise ValueError(f"{filename} record {record_index}: Invalid recipient '{to_val}' (should contain no spaces)")
+    if to_val not in allowed_enums.get('to', []):
+        raise ValueError(f"{filename} record {record_index}: Unknown recipient '{to_val}'")
+    payment['to'] = to_val
+
+    # Validate 'via' (payment method)
+    via = payment['via']
+    if not isinstance(via, str):
+        via = str(via)
+    if not re.match(r'^\S+$', via):
+        raise ValueError(f"{filename} record {record_index}: Invalid payment method '{via}' (should contain no spaces)")
+    if via not in allowed_enums.get('via', []):
+        raise ValueError(f"{filename} record {record_index}: Unknown payment method '{via}'")
+    payment['via'] = via
+
+    # Validate and coerce 'dtEff' (effective date). If absent, default to dt's month.
+    if 'dtEff' in payment:
+        try:
+            payment['dtEff'] = format_dtEff(payment['dtEff'])
+        except ValueError as e:
+            raise ValueError(f"{filename} record {record_index}: {e}")
+    else:
+        dt_str = payment['dt']
+        payment['dtEff'] = dt_str[2:4] + '.' + dt_str[4:6]
+    return payment
+
+# -----------------------------------------------------------------------------
+# Validation for expected amounts records.
+# -----------------------------------------------------------------------------
+def validate_expected(exp, allowed_enums, record_index, filename):
+    required_fields = ['first', 'last', 'amt', 'who']
+    for field in required_fields:
+        if field not in exp:
+            raise ValueError(f"{filename} record {record_index}: Missing required field '{field}'")
+    try:
+        exp['first'] = format_yy_mm(exp['first'])
+    except ValueError as e:
+        raise ValueError(f"{filename} record {record_index}: {e}")
+    try:
+        exp['last'] = format_yy_mm(exp['last'])
+    except ValueError as e:
+        raise ValueError(f"{filename} record {record_index}: {e}")
+    try:
+        exp['amt'] = format_amt(exp['amt'])
+    except ValueError as e:
+        raise ValueError(f"{filename} record {record_index}: {e}")
+
+    who = exp['who']
+    if isinstance(who, str):
+        if who != "all" and who not in allowed_enums.get('nm', []):
+            raise ValueError(f"{filename} record {record_index}: Unknown lodger in 'who': '{who}'")
+    elif isinstance(who, list):
+        for item in who:
+            if not isinstance(item, str):
+                item = str(item)
+            if item not in allowed_enums.get('nm', []):
+                raise ValueError(f"{filename} record {record_index}: Unknown lodger in 'who' list: '{item}'")
+    else:
+        raise ValueError(f"{filename} record {record_index}: 'who' field must be 'all', a string, or a list of strings")
+    return exp
+
+# -----------------------------------------------------------------------------
+# Helpers for report aggregation.
+# -----------------------------------------------------------------------------
+def parse_amount(amt_str):
+    return float(amt_str)
+
+def month_to_tuple(yy_mm):
+    parts = yy_mm.split('.')
+    return (int(parts[0]), int(parts[1]))
+
+def month_in_range(month, first, last):
+    return month_to_tuple(first) <= month_to_tuple(month) <= month_to_tuple(last)
+
+# -----------------------------------------------------------------------------
+# Process and validate payments and expected amounts.
+# -----------------------------------------------------------------------------
+def process_payments(payments, allowed_enums, filename):
+    valid_payments = []
+    for i, p in enumerate(payments, start=1):
+        try:
+            valid_payments.append(validate_payment(p, allowed_enums, i, filename))
+        except ValueError as e:
+            sys.exit(str(e))
+    return valid_payments
+
+def process_expected(expected_list, allowed_enums, filename):
+    valid_expected = []
+    for i, e in enumerate(expected_list, start=1):
+        try:
+            valid_expected.append(validate_expected(e, allowed_enums, i, filename))
+        except ValueError as err:
+            sys.exit(str(err))
+    return valid_expected
+
+# -----------------------------------------------------------------------------
+# Compute dynamic column widths using allowed enum values.
+# -----------------------------------------------------------------------------
+def compute_widths(allowed_enums):
+    # Detail table widths for payment details.
+    detail_widths = {}
+    detail_widths["Date"] = max(len("Date"), 8)  # dt is always 8 chars.
+    detail_widths["Amount"] = max(len("Amount"), 6)  # ddd.cc is 6 chars.
+    detail_widths["To"] = max(len("To"), max((len(s) for s in allowed_enums.get("to", [])), default=0))
+    detail_widths["Via"] = max(len("Via"), max((len(s) for s in allowed_enums.get("via", [])), default=0))
+    # Summary widths.
+    summary_widths = {}
+    summary_widths["Month"] = max(len("Month"), 6)  # "yy.mm" fits in 6 chars.
+    summary_widths["Lodger"] = max(len("Lodger"), max((len(s) for s in allowed_enums.get("nm", [])), default=0))
+    summary_widths["Expected"] = 8  # fixed format: ddd.cc => 8 including spacing
+    summary_widths["Paid"] = 8
+    summary_widths["Balance"] = 8
+    summary_widths["Status"] = max(len("Status"), len("Overpaid"), len("Settled"), len("Owed"))
+    return summary_widths, detail_widths
+
+# -----------------------------------------------------------------------------
+# Aggregate data by month and lodger.
+#
+# For each month (only up to the current month), we accumulate:
+#   - The total expected and actual amounts.
+#   - A list of individual payment records (under 'payments').
+# -----------------------------------------------------------------------------
+def aggregate_report(payments, expected_list, allowed_nm, filter_lodger=None):
+    months = set()
+    # Add months from expected records.
+    for exp in expected_list:
+        first = exp['first']
+        last = exp['last']
+        f_year, f_month = month_to_tuple(first)
+        l_year, l_month = month_to_tuple(last)
+        year, month = f_year, f_month
+        while (year, month) <= (l_year, l_month):
+            months.add(f"{year:02d}.{month:02d}")
+            month += 1
+            if month > 12:
+                month = 1
+                year += 1
+    # Also add months referenced in payments.
+    for p in payments:
+        months.add(p['dtEff'])
+    months = sorted(list(months), key=lambda m: month_to_tuple(m))
+    # Do not filter out future months; include all months.
+
+    # Initialize report structure.
+    report = {m: {} for m in months}
+    # Process expected amounts.
+    for exp in expected_list:
+        first = exp['first']
+        last = exp['last']
+        exp_amt = parse_amount(exp['amt'])
+        if isinstance(exp['who'], str):
+            if exp['who'] == "all":
+                lodgers = allowed_nm
+            else:
+                lodgers = [exp['who']]
+        else:
+            lodgers = exp['who']
+        for m in months:
+            if month_in_range(m, first, last):
+                for lodger in lodgers:
+                    if filter_lodger and lodger != filter_lodger:
+                        continue
+                    report[m].setdefault(lodger, {'expected': 0.0, 'actual': 0.0, 'payments': []})
+                    report[m][lodger]['expected'] += exp_amt
+    # Process payments.
+    for p in payments:
+        lodger = p['nm']
+        if filter_lodger and lodger != filter_lodger:
+            continue
+        m = p['dtEff']
+        amt = parse_amount(p['amt'])
+        report.setdefault(m, {})
+        report[m].setdefault(lodger, {'expected': 0.0, 'actual': 0.0, 'payments': []})
+        report[m][lodger]['actual'] += amt
+        report[m][lodger]['payments'].append(p)
+    return months, report
+
+# -----------------------------------------------------------------------------
+# Generate a text report.
+#
+# For each month (up to the current month) and for each lodger, a summary
+# line is printed followed by an indented table of detailed payment records.
+# Column widths are determined dynamically.
+# -----------------------------------------------------------------------------
+def generate_text_report(months, report, summary_widths, detail_widths):
+    # Group payments by lodger then by month.
+    lodger_months = {}
+    for m in months:
+        if m not in report:
+            continue
+        for lodger, data in report[m].items():
+            if lodger not in lodger_months:
+                lodger_months[lodger] = {}
+            lodger_months[lodger][m] = data
+
+    lines = []
+    # Use dynamic widths from detail_widths.
+    date_w = detail_widths["Date"]
+    amount_w = detail_widths["Amount"]
+    to_w = detail_widths["To"]
+    via_w = detail_widths["Via"]
+
+    # Determine current month and previous month (to exclude zero-balance older months)
+    current_month = datetime.datetime.now().strftime("%y.%m")
+    current_year, current_month_num = month_to_tuple(current_month)
+    prev_month_num = current_month_num - 1
+    prev_year = current_year
+    if prev_month_num < 1:
+        prev_month_num = 12
+        prev_year -= 1
+    prev_month = f"{prev_year:02d}.{prev_month_num:02d}"
+
+    for lodger in sorted(lodger_months.keys()):
+        lines.append(f"Who: {lodger}")
+        monthly_data = lodger_months[lodger]
+        sorted_months = sorted(monthly_data.keys(), key=lambda m: month_to_tuple(m))
+
+        # Initialize summary totals (excluding the current month).
+        total_expected = 0.0
+        total_paid = 0.0
+
+        for m in sorted_months:
+            data = monthly_data[m]
+            # Skip future months if there are no payments.
+            if month_to_tuple(m) > month_to_tuple(current_month) and not data['payments']:
+                continue
+
+            expected = data['expected']
+            actual = data['actual']
+            balance = actual - expected
+            
+            # Skip zero-balance months more than 1 month prior to current month
+            if balance == 0 and month_to_tuple(m) < month_to_tuple(prev_month):
+                # Still include in total calculations even if we don't show the month
+                if month_to_tuple(m) <= month_to_tuple(current_month):
+                    total_expected += expected
+                    total_paid += actual
+                continue
+
+            if month_to_tuple(m) <= month_to_tuple(current_month):
+                lines.append(f"  Month: {m} | Expected: {expected:>8.2f} | Paid: {actual:>8.2f} | Balance: {balance:>8.2f}")
+                total_expected += expected
+                total_paid += actual
+            # elif month_to_tuple(m) == month_to_tuple(current_month):
+            #     lines.append(f"  Month: {m} (current)")
+            else:
+                lines.append(f"  Month: {m} (future)")
+
+            # Detailed payment breakdown for the month.
+            indent = "      "
+            detailed_header = (f"{'Date':<{date_w}} | {'Amount':>{amount_w}} | "
+                               f"{'To':<{to_w}} | {'Via':<{via_w}}")
+            lines.append(indent + detailed_header)
+            lines.append(indent + "-" * len(detailed_header))
+            sorted_payments = sorted(data['payments'], key=lambda p: p['dt'])
+            for p in sorted_payments:
+                amt_str = p['amt']
+                if amt_str.startswith("0"):
+                    amt_str = " " + amt_str[1:]
+                detail_line = (f"{p['dt']:<{date_w}} | {amt_str:>{amount_w}} | "
+                               f"{p['to']:<{to_w}} | {p['via']:<{via_w}}")
+                lines.append(indent + detail_line)
+            lines.append("")
+
+        overall_balance = total_paid - total_expected
+        lines.append(f"  Summary (excluding current month): Expected: {total_expected:>8.2f} | Paid: {total_paid:>8.2f} | Balance: {overall_balance:>8.2f}")
+        lines.append("")
+    return "\n".join(lines)
+
+# -----------------------------------------------------------------------------
+# Load the enum schema file.
+# -----------------------------------------------------------------------------
+def load_schema(filename):
+    return load_yaml_file(filename)
+
+# -----------------------------------------------------------------------------
+# Main function and command-line interface.
+# -----------------------------------------------------------------------------
+def main():
+    now = datetime.datetime.now()
+    default_prefix = f"pymts{now.strftime('%y')}"
+    parser = argparse.ArgumentParser(description="Monthly Payment Report Generator")
+    parser.add_argument("--pymts-prefix", default=default_prefix,
+                        help=f"Prefix for payment files (default: {default_prefix}). All files starting with this prefix will be processed.")
+    parser.add_argument("--expected", default="expected.yaml",
+                        help="YAML file with expected amounts (default: expected.yaml)")
+    parser.add_argument("--schema", default="schema.yaml",
+                        help="YAML schema file for enums (default: schema.yaml)")
+    parser.add_argument("--lodger", help="Restrict report to a specific lodger")
+    parser.add_argument("--output", default="report.txt",
+                        help="Output report file (default: report.txt)")
+    args = parser.parse_args()
+
+    # Locate all payment files whose names start with the specified prefix.
+    payments_files = sorted(glob.glob(args.pymts_prefix + "*"))
+    if not payments_files:
+        sys.exit(f"No payment files found with prefix '{args.pymts_prefix}'")
+    payments_data = []
+    for filename in payments_files:
+        data = load_yaml_file(filename)
+        if not isinstance(data, list):
+            sys.exit(f"Expected a list of payment records in file {filename}")
+        for record in data:
+            record['_source'] = filename  # For better error reporting.
+            payments_data.append(record)
+
+    allowed_enums = load_schema(args.schema)
+    allowed_nm = allowed_enums.get('nm', [])
+    expected_data = load_yaml_file(args.expected)
+
+    validated_payments = []
+    for record in payments_data:
+        source = record.get('_source', 'unknown')
+        validated_payments.extend(process_payments([record], allowed_enums, source))
+    expected_list = process_expected(expected_data, allowed_enums, args.expected)
+    months, report = aggregate_report(validated_payments, expected_list, allowed_nm, args.lodger)
+
+    # Compute dynamic column widths.
+    summary_widths, detail_widths = compute_widths(allowed_enums)
+    text_report = generate_text_report(months, report, summary_widths, detail_widths)
+    with open(args.output, "w") as f:
+        f.write(text_report)
+    print(f"Report written to {args.output}")
+
+if __name__ == "__main__":
+    main()
