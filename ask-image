@@ -8,15 +8,27 @@ test -f "$1" || die "missing image filename"
 
 image_fnm="$1"
 prompt="${2:-is there a bird looking at the camera?}"
+resp_type="${3:-boolean}"
+detail="${4:-low}"
 JPG_B64="$(base64 -w 0 "${image_fnm}")"
 
 # https://platform.openai.com/docs/guides/images?api-mode=responses&lang=curl&format=url
+
+case "$resp_type" in
+   "boolean"|"number"|"integer"|"string")
+       ;;
+   *)  die "resp_type param not one of boolean|number|integer|string: $resp_type"
+       ;;
+   esac
+
+model="gpt-4o-mini"  # surprisingly, mini consumes almost 3x more input tokens than gpt-4o!!!
+model="gpt-4o"       # even OpenAI's vision-pricing calc shows cost of a low-res 221x295 as mini=$0.000425, 4o=$0.000213 (1/2 price of mini)
 
 curl https://api.openai.com/v1/responses \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
   -d '{
-    "model": "gpt-4o-mini",
+    "model": "'"$model"'",
     "store": false,
     "temperature": 0.0,
     "input": [
@@ -27,26 +39,26 @@ curl https://api.openai.com/v1/responses \
           {
             "type": "input_image",
             "image_url": "data:image/jpeg;base64,'"$JPG_B64"'",
-            "detail": "low"
+            "detail": "'"$detail"'"
           }
         ]
       }
     ],
     "text": {
       "format": {
+        "strict": true,
         "type": "json_schema",
-        "name": "boolean_response",
+        "name": "'"$resp_type"'_response",
         "schema": {
             "type": "object",
             "properties": {
                 "response": {
-                    "type": "boolean"
+                    "type": "'"$resp_type"'"
                 }
             },
             "required": ["response"],
             "additionalProperties": false
-        },
-        "strict": true
+        }
       }
     }
   }'
