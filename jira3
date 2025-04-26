@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+
+# to explore running JiraCloud v3 APIs https://developer.atlassian.com/cloud/jira/platform/rest/v3/
+# with per-API response-data filtering and tabularizing using `jq` and `column`
+
+# JiraCloud site config stored separately for security:
+# Unfortunately, curlconf (-K) files can only define curl-specific 'key = val'
+# (e.g. 'user = username:passwd') or curl cmdline options, so we define JIRA_HOST
+# in a like-named .env file:
+curlconf="$HOME/.curl-jira-test"  # contains 'user = username:passwd' and '-H "Accept: application/json"'
+
+curlenv="$curlconf.env"
+test -f "$curlconf" || die "curlconf is not a file: $curlconf"
+test -f "$curlenv"  || die  "curlenv is not a file: $curlenv"
+
+set -o allexport  # .env type files contain only unadorned variable assignments
+source "$curlenv"
+set +o allexport
+test "$JIRA_HOST" || die "JIRA_HOST not defined in $curlenv"
+
+echo "$JIRA_HOST"
+jx='.[]?'  # Safely iterate if it's an array; do nothing otherwise
+case "$1" in
+  project)  ep="$1" jx='.[] | [.key, .name, .projectTypeKey, .simplified, .isPrivate, .style]' ;;
+            # style: "next-gen"->TMP | "classic"->CMP
+  status)   ep="$1" jx='.[] | [
+                          .id,
+                          .name,
+                          ( .scope?.type // "GLOBAL" ),
+                          .statusCategory?.name,
+                          .statusCategory?.key
+                         ]' ;;
+            # In JiraCloud you can have:
+            #
+            #   Global (system) statuses
+            #
+            #     Used by company-managed (classic) projects (CMP) or across all projects in the instance.
+            #     Don't include a scope property in the JSON response.
+            #     Example: the entry for id="3" or id="10009" with no "scope" field.
+            #
+            #   Project-scoped statuses
+            #
+            #     Created for (or only used within) a specific team-managed project (TMP) (formerly "next-gen").
+            #     Include a scope property referencing the project ID.
+            #     Example: the entry for id="10004" has "scope": { "type": "PROJECT", "project": { "id": "10001" } }.
+            #
+            # When you call GET /rest/api/3/status, Jira returns both the global
+            # statuses and the project-specific ones the caller is permitted to view.
+            # The presence or absence of the "scope" object indicates whether a status
+            # is globally available or specific to a particular project.
+            #
+            # Q: In my understanding, a Project-scoped status is required to
+            #    be derived from a Global status.  Is this correct?
+            #
+            # o1p: Not exactly.  In JiraCloud, each **project-scoped
+            #    status** is its own "standalone" status object and does not
+            #    have to be derived from a global (system) status.  They do
+            #    share a status **category** (e.g., To Do, In Progress,
+            #    Done), but that category is not the same as a "parent"
+            #    status.  A project-scoped status can be created from scratch
+            #    (with its own unique ID) for a TMP -- even if it has the same
+            #    name and category as a global status.
+            #
+            # Q: How in the CMP UI do I create a Project scoped status
+            #    unrelated to an existing global status?
+            #
+            # o1p: Short answer: **You can't**.  In a CMP, all statuses are
+            #    global.  The concept of a "project-scoped" status is
+            #    specific to TMPs, which is why CMP statuses show up for
+            #    everyone.  If you edit a CMP's workflow and add a new
+            #    status, that status becomes globally available, not scoped
+            #    to one project.
+
+  *)        ep="$1" ; curl -sS -K "$curlconf" "${JIRA_HOST}/rest/api/3/$ep" | jq . ; exit 0 ;;
+esac
+
+ep="/rest/api/3/$ep"
+
+echo "$ep $jx"
+curl -sS -K "$curlconf" "${JIRA_HOST}$ep" | jq -r "$jx | @tsv" | column -t -s $'\t'
