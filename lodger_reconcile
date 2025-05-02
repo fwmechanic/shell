@@ -16,6 +16,12 @@ import glob
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
+# Constants for regex patterns
+AMOUNT_PATTERN = r'^\d{3}\.\d{2}$'  # Matches exactly 3 digits before decimal and 2 after
+# Note: This pattern is used for internal validation of already-formatted amounts.
+# Amounts from YAML files come in as floats, while amounts from other sources
+# might come in as strings in ddd.cc format. Both are handled by to_cents().
+
 # -----------------------------------------------------------------------------
 # Utility function to load a YAML file with detailed error reporting.
 # -----------------------------------------------------------------------------
@@ -35,6 +41,37 @@ def load_yaml_file(filename):
 # -----------------------------------------------------------------------------
 # Helper routines to coerce and format numeric values.
 # -----------------------------------------------------------------------------
+def to_cents(val):
+    """Convert a dollar amount (float or string) to integer cents.
+    
+    Handles two input formats:
+    1. Strings in ddd.cc format (e.g. "123.45")
+    2. Floats (e.g. 123.45) - typically from YAML files
+    """
+    if isinstance(val, str):
+        try:
+            # If it's already in ddd.cc format, parse it
+            if re.match(AMOUNT_PATTERN, val):
+                dollars, cents = val.split('.')
+                return int(dollars) * 100 + int(cents)
+            # Otherwise try to convert to float first
+            val = float(val)
+        except Exception:
+            raise ValueError(f"Invalid amount value: {val}")
+    
+    # For float values, round to nearest cent and convert to integer
+    try:
+        # Using round() to avoid floating point precision issues
+        return round(float(val) * 100)
+    except Exception:
+        raise ValueError(f"Invalid amount value: {val}")
+
+def cents_to_display(cents):
+    """Convert integer cents to display format (ddd.cc with leading zeros)."""
+    dollars = abs(cents) // 100
+    cents_part = abs(cents) % 100
+    return f"{dollars:03d}.{cents_part:02d}"
+
 def format_dt(val):
     """Format dt (payment date) as a string in yyyymmdd."""
     if isinstance(val, str):
@@ -51,19 +88,6 @@ def format_dt(val):
     except Exception:
         raise ValueError(f"Invalid dt date: {dt_str}")
     return dt_str
-
-def format_amt(val):
-    """Format amt (amount) as a string in ddd.cc format."""
-    if isinstance(val, str):
-        amt_str = val
-    else:
-        try:
-            amt_str = f"{float(val):06.2f}"
-        except Exception:
-            raise ValueError(f"Invalid amt value: {val}")
-    if not re.match(r'^\d{3}\.\d{2}$', amt_str):
-        raise ValueError(f"Invalid amt format: {amt_str} (expected ddd.cc)")
-    return amt_str
 
 def format_dtEff(val):
     """Format dtEff (effective date) as a string in yy.mm format."""
@@ -118,9 +142,9 @@ def validate_payment(payment, allowed_enums, record_index, filename):
     except ValueError as e:
         raise ValueError(f"{filename} record {record_index}: {e}")
 
-    # Validate and coerce 'amt' (amount)
+    # Validate and coerce 'amt' (amount) to integer cents
     try:
-        payment['amt'] = format_amt(payment['amt'])
+        payment['amt'] = to_cents(payment['amt'])
     except ValueError as e:
         raise ValueError(f"{filename} record {record_index}: {e}")
 
@@ -172,7 +196,7 @@ def validate_expected(exp, allowed_enums, record_index, filename):
     except ValueError as e:
         raise ValueError(f"{filename} record {record_index}: {e}")
     try:
-        exp['amt'] = format_amt(exp['amt'])
+        exp['amt'] = to_cents(exp['amt'])
     except ValueError as e:
         raise ValueError(f"{filename} record {record_index}: {e}")
 
@@ -193,9 +217,6 @@ def validate_expected(exp, allowed_enums, record_index, filename):
 # -----------------------------------------------------------------------------
 # Helpers for report aggregation.
 # -----------------------------------------------------------------------------
-def parse_amount(amt_str):
-    return float(amt_str)
-
 def month_to_tuple(yy_mm):
     parts = yy_mm.split('.')
     return (int(parts[0]), int(parts[1]))
@@ -278,7 +299,7 @@ def aggregate_report(payments, expected_list, allowed_nm, filter_lodger=None):
     for exp in expected_list:
         first = exp['first']
         last = exp['last']
-        exp_amt = parse_amount(exp['amt'])
+        exp_amt = exp['amt']  # Already in cents from validate_expected
         if isinstance(exp['who'], str):
             if exp['who'] == "all":
                 lodgers = allowed_nm
@@ -291,7 +312,7 @@ def aggregate_report(payments, expected_list, allowed_nm, filter_lodger=None):
                 for lodger in lodgers:
                     if filter_lodger and lodger != filter_lodger:
                         continue
-                    report[m].setdefault(lodger, {'expected': 0.0, 'actual': 0.0, 'payments': []})
+                    report[m].setdefault(lodger, {'expected': 0, 'actual': 0, 'payments': []})
                     report[m][lodger]['expected'] += exp_amt
     # Process payments.
     for p in payments:
@@ -299,9 +320,9 @@ def aggregate_report(payments, expected_list, allowed_nm, filter_lodger=None):
         if filter_lodger and lodger != filter_lodger:
             continue
         m = p['dtEff']
-        amt = parse_amount(p['amt'])
+        amt = p['amt']  # Already in cents from validate_payment
         report.setdefault(m, {})
-        report[m].setdefault(lodger, {'expected': 0.0, 'actual': 0.0, 'payments': []})
+        report[m].setdefault(lodger, {'expected': 0, 'actual': 0, 'payments': []})
         report[m][lodger]['actual'] += amt
         report[m][lodger]['payments'].append(p)
     return months, report
@@ -347,8 +368,8 @@ def generate_text_report(months, report, summary_widths, detail_widths):
         sorted_months = sorted(monthly_data.keys(), key=lambda m: month_to_tuple(m))
 
         # Initialize summary totals (excluding the current month).
-        total_expected = 0.0
-        total_paid = 0.0
+        total_expected = 0
+        total_paid = 0
 
         for m in sorted_months:
             data = monthly_data[m]
@@ -361,6 +382,7 @@ def generate_text_report(months, report, summary_widths, detail_widths):
             balance = actual - expected
             
             # Skip zero-balance months more than 1 month prior to current month
+            # Using integer comparison for exact equality (no floating point issues)
             if balance == 0 and month_to_tuple(m) < month_to_tuple(prev_month):
                 # Still include in total calculations even if we don't show the month
                 if month_to_tuple(m) <= month_to_tuple(current_month):
@@ -369,11 +391,15 @@ def generate_text_report(months, report, summary_widths, detail_widths):
                 continue
 
             if month_to_tuple(m) <= month_to_tuple(current_month):
-                lines.append(f"  Month: {m} | Expected: {expected:>8.2f} | Paid: {actual:>8.2f} | Balance: {balance:>8.2f}")
-                total_expected += expected
-                total_paid += actual
-            # elif month_to_tuple(m) == month_to_tuple(current_month):
-            #     lines.append(f"  Month: {m} (current)")
+                # Convert cents to dollars for display
+                expected_dollars = expected / 100
+                actual_dollars = actual / 100
+                balance_dollars = balance / 100
+                lines.append(f"  Month: {m} | Expected: {expected_dollars:>8.2f} | Paid: {actual_dollars:>8.2f} | Balance: {balance_dollars:>8.2f}")
+                # Only include in totals if strictly before current month
+                if month_to_tuple(m) < month_to_tuple(current_month):
+                    total_expected += expected
+                    total_paid += actual
             else:
                 lines.append(f"  Month: {m} (future)")
 
@@ -385,7 +411,7 @@ def generate_text_report(months, report, summary_widths, detail_widths):
             lines.append(indent + "-" * len(detailed_header))
             sorted_payments = sorted(data['payments'], key=lambda p: p['dt'])
             for p in sorted_payments:
-                amt_str = p['amt']
+                amt_str = cents_to_display(p['amt'])
                 if amt_str.startswith("0"):
                     amt_str = " " + amt_str[1:]
                 detail_line = (f"{p['dt']:<{date_w}} | {amt_str:>{amount_w}} | "
@@ -393,8 +419,11 @@ def generate_text_report(months, report, summary_widths, detail_widths):
                 lines.append(indent + detail_line)
             lines.append("")
 
-        overall_balance = total_paid - total_expected
-        lines.append(f"  Summary (excluding current month): Expected: {total_expected:>8.2f} | Paid: {total_paid:>8.2f} | Balance: {overall_balance:>8.2f}")
+        # Convert back to dollars for display
+        total_expected_dollars = total_expected / 100
+        total_paid_dollars = total_paid / 100
+        overall_balance_dollars = (total_paid - total_expected) / 100
+        lines.append(f"  Summary (excluding current month): Expected: {total_expected_dollars:>8.2f} | Paid: {total_paid_dollars:>8.2f} | Balance: {overall_balance_dollars:>8.2f}")
         lines.append("")
     return "\n".join(lines)
 
