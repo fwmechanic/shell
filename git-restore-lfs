@@ -2,6 +2,25 @@
 use strict;
 use warnings;
 
+# `git lfs pull` by default leaves the files it manages in either "modified" or
+# "staged" status, even though initially (and thus maybe always) the files are
+# UN-modified.  This confounds my workflow as it co-mingles many "not really
+# modified" files among few "actually modified" files.
+#
+# This script removes the modified (and/or staged) status from git lfs-tracked
+# files which are not actually modified (the `git lfs status` command output
+# shows the hash of the file as known to git [lfs] and of the actual file,
+# making detection of actual modification status "easy" in this script; NB: there
+# is a `git lfs status --json` option, but for some stupid reason, it does not
+# return a "staged" status signifier, so it is LESS useful than the non-porcelain
+# command output which we use exclusively here).
+#
+# The workflow is generally:
+# git pull && git lfs pull  # all LFS-provided files become modified (or staged)
+# git restore-lfs  # this script `git restores` all truly unmodified LFS-provided files
+# # this allows
+# git switch newbr
+
 print "Analyzing LFS file status...\n";
 
 # Get LFS status text output - it has all we need

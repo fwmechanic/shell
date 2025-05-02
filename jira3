@@ -24,14 +24,14 @@ test "$JIRA_HOST" || die "JIRA_HOST not defined in $curlenv"
 echo "$JIRA_HOST"
 jx='.[]?'  # Safely iterate if it's an array; do nothing otherwise
 case "$1" in
-  project)  ep="$1" jx='.[] | [.key, .name, .projectTypeKey, .simplified, .isPrivate, .style]' ;;
+  project)  ep="$1" jx='.[] | [.id, .key, .name, .projectTypeKey, .simplified, .isPrivate, .style]' ;;
             # style: "next-gen"->TMP | "classic"->CMP
   status)   ep="$1" jx='.[] | [
                           .id,
                           .name,
+                          .statusCategory?.key,
                           ( .scope?.type // "GLOBAL" ),
-                          .statusCategory?.name,
-                          .statusCategory?.key
+                          ( .scope?.project?.id // "global" )
                          ]' ;;
             # In JiraCloud you can have:
             #

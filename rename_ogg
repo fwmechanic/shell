@@ -2,8 +2,9 @@
 use strict;
 use warnings;
 
-# Exit if no files provided
-die "Usage: $0 FILES\n" unless @ARGV;
+# if the user didn't pass any files, grab all .ogg in CWD
+@ARGV = glob("*.ogg") unless @ARGV;
+die "No .ogg files found\n" unless @ARGV;
 
 foreach my $filename (@ARGV) {
     # Skip if not an .ogg file

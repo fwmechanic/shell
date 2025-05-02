@@ -1,3 +1,6 @@
 #!/usr/bin/env bash
 
+qf -d .
 eb -q *.7z *.zip *.rar ; epall
+pdf_rename_with_copyright_year *.pdf
+qf -d .
