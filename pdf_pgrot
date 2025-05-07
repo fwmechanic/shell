@@ -4,8 +4,10 @@ PDF_FILE="20240217_Q.EOB.Vijay.Sanghi.X052MPE51241.pdf"
 PDF_FILE="X344MPE42209.pdf"
 PAGE_NUM=3
 
+qpdf="qpdf-latest-x86_64.AppImage"  # AppImage version "installed" to get latest release from https://github.com/qpdf/qpdf/releases/
+
 # Extract the chunk of text describing just this page
-page_info="$(qpdf --show-pages "$PDF_FILE" \
+page_info="$("$qpdf" --show-pages "$PDF_FILE" \
   | awk '/^Page '"$PAGE_NUM"':/{flag=1;next}/^$/{flag=0}flag')"
 
 # Get rotation (0, 90, 180, 270)

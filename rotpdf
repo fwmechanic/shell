@@ -3,7 +3,9 @@
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 
-command -v qpdf > /dev/null || die "qpdf needs to be installed"
+qpdf="qpdf-latest-x86_64.AppImage"  # AppImage version "installed" to get latest release from https://github.com/qpdf/qpdf/releases/
+
+command -v "$qpdf" > /dev/null || die "qpdf needs to be installed"
 
 do1file() (
    fnm="$1"
@@ -35,7 +37,7 @@ do1file() (
 # EX: extract page range from in.pdf into out.pdf (note the '.')  https://askubuntu.com/a/672001
 #     qpdf in.pdf --pages . 1-16 -- out.pdf
 
-dorot() ( qpdf --rotate="$rotdeg" "$1" "$2" )
+dorot() ( "$qpdf" --rotate="$rotdeg" "$1" "$2" )
 
 help() { die "need rotmode file [file...] where rotmode is one of cw ccw 180" ; }
 

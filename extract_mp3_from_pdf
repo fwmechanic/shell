@@ -4,8 +4,7 @@ die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" )
 dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
 
-qpdf="qpdf-11.9.1-x86_64.AppImage"  # AppImage version "installed" to get latest release from https://github.com/qpdf/qpdf/releases/
-                # qpdf-11.9.1 PRESERVES INTERNAL LINKS IN INCOMING PDFS (big win)!!!
+qpdf="qpdf-latest-x86_64.AppImage"  # AppImage version "installed" to get latest release from https://github.com/qpdf/qpdf/releases/
 
 dieifnotinpath "$qpdf"
 

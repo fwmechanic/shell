@@ -6,7 +6,7 @@
 die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 
-qpdf="qpdf.ai"  # AppImage version "installed" to get latest release from https://github.com/qpdf/qpdf/releases/
+qpdf="qpdf-latest-x86_64.AppImage"  # AppImage version "installed" to get latest release from https://github.com/qpdf/qpdf/releases/
 qpdf="qpdf"     # apt-installed version
 
 command -v "$qpdf" > /dev/null || die "$qpdf needs to be installed"
