@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# env-report.sh  --  report process.env.* references in a project
+#   o Prints NAME=VALUE (or NAME=LEN for *_KEY) first
+#   o Then a blank line
+#   o Then all names that are unset or empty in the current shell
+# Usage: env-report.sh [PATH ...]   (defaults to .)
+
+## 1. collect unique variable names with ripgrep -> sort -u
+mapfile -t all_vars < <(
+  rg -o --no-filename --no-line-number \
+     --replace '$1' \
+     'process\.env\.([A-Za-z_][A-Za-z0-9_]*)' "${@:-.}" |
+  sort -u
+)
+
+## 2. emit defined vars immediately, stash empty/unset ones
+undefined=()
+
+for var in "${all_vars[@]}"; do
+  val="${!var}"            # indirect expansion: value of $var, could be empty
+
+  if [[ -n $val ]]; then               # non-empty
+    if [[ $var == *_KEY ]]; then
+      printf '%s=%d\n' "$var" "${#val}"
+    else
+      printf '%s=%s\n' "$var" "$val"
+    fi
+  else                                  # empty or undefined -> save for later
+    undefined+=("$var")
+  fi
+done
+
+## 3. print the "missing" ones, if any
+if ((${#undefined[@]})); then
+  printf '\n'               # blank line separator
+  printf '%s\n' "${undefined[@]}"
+fi
