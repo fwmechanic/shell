@@ -41,17 +41,14 @@ def fetch_sample_rows(mdb_file, table, n):
     proc = subprocess.Popen(["mdb-export", mdb_file, table], stdout=subprocess.PIPE, text=True)
     reader = csv.reader(proc.stdout)
     samples = []
-    try:
-        header = next(reader)
-    except StopIteration:
-        return []
+    header = next(reader, None)
     for i, row in enumerate(reader):
         if i >= n:
             break
         samples.append(row)
     proc.stdout.close()
     proc.wait()
-    return [header] + samples
+    return [header] + samples if header else samples
 
 
 def format_rows(rows, indent='    '):
@@ -63,16 +60,16 @@ def format_rows(rows, indent='    '):
         new = []
         for cell in row:
             s = str(cell)
-            # replace actual newlines, carriage returns, and tabs with literal escape sequences
+            # replace control chars with escape sequences
             s = s.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+            # numeric test
             if num_re.match(s):
                 new.append(s)
             else:
-                # escape quotes if both appear, otherwise wrap in the other
+                # quote or escape
                 if '"' in s and "'" in s:
-                    dbl_count = s.count('"')
-                    sng_count = s.count("'")
-                    if dbl_count <= sng_count:
+                    dbl = s.count('"'); sng = s.count("'")
+                    if dbl <= sng:
                         s = '"' + s.replace('"', '\\"') + '"'
                     else:
                         s = "'" + s.replace("'", "\\'") + "'"
@@ -84,7 +81,7 @@ def format_rows(rows, indent='    '):
                 new.append(s)
         quoted.append(new)
     cols = list(zip(*quoted))
-    widths = [max(len(str(cell)) for cell in col) for col in cols]
+    widths = [max(len(str(c)) for c in col) for col in cols]
     lines = []
     for row in quoted:
         parts = [str(cell).ljust(widths[i]) for i, cell in enumerate(row)]
@@ -102,18 +99,23 @@ def main():
     mdb_file = args.mdb_file
     sample_n = args.rows
 
-    # 1) List tables and compute row counts
+    # 1) List tables and compute row counts via csv
     tables = subprocess.check_output(["mdb-tables", "-1", mdb_file], text=True).splitlines()
     row_counts = {}
     for tbl in tables:
         tbl = tbl.strip()
         if not tbl:
             continue
-        ln = subprocess.check_output(["mdb-export", mdb_file, tbl], text=True).splitlines()
-        row_counts[tbl] = max(len(ln) - 1, 0)
+        proc = subprocess.Popen(["mdb-export", mdb_file, tbl], stdout=subprocess.PIPE, text=True)
+        reader = csv.reader(proc.stdout)
+        header = next(reader, None)
+        count = sum(1 for _ in reader)
+        proc.stdout.close()
+        proc.wait()
+        row_counts[tbl] = count
     include_tables = {tbl for tbl, cnt in row_counts.items() if cnt > 0}
 
-    # 2) Load and dedupe MSysRelationships and build reverse mapping
+    # 2) Load FKs
     rels = defaultdict(list)
     reverse_rels = defaultdict(list)
     seen = set()
@@ -123,8 +125,7 @@ def main():
         ct, cc = r['szObject'], r['szColumn']
         pt, pc = r['szReferencedObject'], r['szReferencedColumn']
         key = (ct, cc, pt, pc)
-        if key in seen:
-            continue
+        if key in seen: continue
         seen.add(key)
         seq = int(r.get('icolumn','0') or 0)
         ccol = int(r.get('ccolumn','0') or 0)
@@ -133,107 +134,87 @@ def main():
         if ct in include_tables:
             reverse_rels[(pt, pc)].append((ct, cc, ccol, seq, gr))
 
-    # 3) Dump raw DDL and split into table blocks
-    schema = subprocess.check_output(["mdb-schema", mdb_file], text=True)
-    blocks = []
-    cur = None
-    for line in schema.splitlines(keepends=True):
+    # 3) Split DDL
+    ddl = subprocess.check_output(["mdb-schema", mdb_file], text=True)
+    blocks, cur = [], None
+    tn = None
+    for line in ddl.splitlines(keepends=True):
         el = line.expandtabs(4)
-        # normalize lone '(' lines
-        if re.match(r'^\s*\(\s*$', el):
-            el = '(\n'
+        if re.match(r'^\s*\(\s*$', el): el = '(\n'
         m = re.match(r'^CREATE TABLE \[(.+?)\]', el)
         if m:
-            tn = m.group(1)
-            cur = [el]
+            tn = m.group(1); cur = [el]
         elif cur is not None:
             cur.append(el)
         if cur and el.strip().endswith(');'):
-            blocks.append((tn, cur))
-            cur = None
+            blocks.append((tn, cur)); cur = None
 
-    # 4) Annotate and collect blocks
+    # 4) Annotate blocks
     annotated = []
     for tbl, lines in blocks:
-        if tbl not in include_tables:
-            continue
+        if tbl not in include_tables: continue
         cnt = row_counts[tbl]
         fk_map = defaultdict(list)
         for fk in sorted(rels.get(tbl, []), key=lambda x: x['seq']):
             note = f"{fk['parent_tbl']}.{fk['parent_col']}"
-            if fk['ccolumn'] > 1:
-                note += f"({fk['seq']}/{fk['ccolumn']})"
+            if fk['ccolumn']>1: note += f"({fk['seq']}/{fk['ccolumn']})"
             flags = decode_grbit(fk['grbit'])
-            if flags:
-                note += ' [' + ','.join(flags) + ']'
+            if flags: note += ' [' + ','.join(flags) + ']'
             fk_map[fk['child']].append(note)
-        ann = []
-        first = True
-        for line in lines:
+        ann, first = [], True
+        for ln in lines:
             if first:
-                ann.append(line.rstrip('\r\n') + f" -- rowCount = {cnt}\n")
-                first = False
-                continue
-            el = line.expandtabs(4)
-            mcol = re.match(r'^(?P<prefix>\s*\[[^]]+\]\s*[^,]*,)(?:\s*)(?P<comment>--.*)?$', el)
+                ann.append(ln.rstrip('\r\n')+f" -- rowCount = {cnt}\n"); first=False; continue
+            el = ln.expandtabs(4)
+            mcol = re.match(r'^(?P<p>\s*\[[^]]+\]\s*[^,]*,)(?:\s*)(?P<c>--.*)?$', el)
             if mcol:
-                prefix = mcol.group('prefix')
-                colname = re.match(r'^\s*\[([^]]+)\]', prefix).group(1)
-                comment = mcol.group('comment') or ''
-                if colname in fk_map:
-                    comment = '-- FK -> ' + '; '.join(fk_map[colname])
-                    fk_map.pop(colname)
-                revs = reverse_rels.get((tbl, colname), [])
-                if revs:
-                    rev_notes = []
-                    for ctbl, ccoln, ccol, seq, gr in revs:
-                        txt = f"{ctbl}.{ccoln}" + (f"({seq}/{ccol})" if ccol > 1 else '')
+                p = mcol.group('p'); cn = re.match(r'^\s*\[([^]]+)\]',p).group(1)
+                cmt = mcol.group('c') or ''
+                if cn in fk_map:
+                    cmt = '-- FK -> ' + '; '.join(fk_map[cn]); fk_map.pop(cn)
+                rev = reverse_rels.get((tbl,cn), [])
+                if rev:
+                    notes = []
+                    for ct, cc, ccol, seq, gr in rev:
+                        txt = f"{ct}.{cc}" + (f"({seq}/{ccol})" if ccol>1 else '')
                         fl = decode_grbit(gr)
-                        if fl:
-                            txt += ' [' + ','.join(fl) + ']'
-                        rev_notes.append(txt)
-                    comment = (comment + ' ' if comment else '-- ') + 'FK <- ' + ' '.join(rev_notes)
-                ann.append(prefix + (' ' + comment if comment else '') + '\n')
+                        if fl: txt += ' [' + ','.join(fl) + ']'
+                        notes.append(txt)
+                    cmt = (cmt + ' ' if cmt else '-- ') + 'FK <- ' + ' '.join(notes)
+                ann.append(p + (' ' + cmt if cmt else '') + '\n')
             else:
-                ann.append(line)
+                ann.append(ln)
         annotated.append((tbl, ann))
 
-    # 5) Align schema columns
+    # 5) Align schema
     aligned = []
     for tbl, lines in annotated:
-        entries = []
-        max_name = max_type = 0
-        for idx, line in enumerate(lines):
-            el = line.expandtabs(4)
-            m = re.match(r'^(?P<indent>\s*)(?P<name>\[[^]]+\])\s+(?P<type>[^,]+,?)(?:\s*)(?P<comment>--.*)?$', el)
-            if not m:
-                continue
-            indent, name, typec, comment = m.group('indent'), m.group('name'), m.group('type'), m.group('comment') or ''
-            entries.append((idx, indent, name, typec, comment))
-            max_name = max(max_name, len(indent + name))
-            max_type = max(max_type, len(typec))
-        new_lines = list(lines)
-        for idx, indent, name, typec, comment in entries:
-            name_field = indent + name.ljust(max_name - len(indent))
-            type_field = typec.ljust(max_type)
-            new_lines[idx] = (f"{name_field} {type_field} {comment}" if comment else f"{name_field} {type_field}").rstrip() + '\n'
-        aligned.append((tbl, new_lines))
+        ents, mn, mt = [], 0, 0
+        for i, l in enumerate(lines):
+            el=l.expandtabs(4)
+            m=re.match(r'^(?P<i>\s*)(?P<n>\[[^]]+\])\s+(?P<t>[^,]+,?)(?:\s*)(?P<c>--.*)?$', el)
+            if not m: continue
+            ind, nm, ty, cm = m.group('i'), m.group('n'), m.group('t'), m.group('c') or ''
+            ents.append((i, ind, nm, ty, cm))
+            mn=max(mn,len(ind+nm)); mt=max(mt,len(ty))
+        nl=list(lines)
+        for i, ind, nm, ty, cm in ents:
+            nf=ind+nm.ljust(mn-len(ind)); tf=ty.ljust(mt)
+            nl[i] = (f"{nf} {tf} {cm}" if cm else f"{nf} {tf}").rstrip() + '\n'
+        aligned.append((tbl, nl))
 
-    # 6) Sort and output with optional samples
+    # 6) Output + samples
     aligned.sort(key=lambda x: row_counts[x[0]], reverse=True)
-    out_file = mdb_file + '_annotated_schema.sql'
-    with open(out_file, 'w') as f:
+    out = mdb_file + '_annotated_schema.sql'
+    with open(out,'w') as f:
         for tbl, lines in aligned:
-            for ln in lines:
-                f.write(ln)
-            if sample_n > 0:
-                rows = fetch_sample_rows(mdb_file, tbl, sample_n)
+            for ln in lines: f.write(ln)
+            if sample_n>0:
+                rows=fetch_sample_rows(mdb_file,tbl,sample_n)
                 if rows:
                     f.write('\n    -- Sample rows:\n')
-                    for rline in format_rows(rows, indent='    '):
-                        f.write(rline)
+                    for r in format_rows(rows): f.write(r)
                     f.write('\n')
-    print(f"Annotated schema with samples written to: {out_file}")
+    print(f"Annotated schema with samples written to: {out}")
 
-if __name__ == '__main__':
-    main()
+if __name__=='__main__': main()
