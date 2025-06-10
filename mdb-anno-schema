@@ -14,7 +14,7 @@ annotate_schema.py
 Dump the schema of an Access .mdb, annotate inline FK relationships,
 add inline rowCount comments, omit empty tables, sort tables by descending rowCount,
 and align fieldName, fieldType, and comments into vertical columns.
-Supports composite-FK position, nondefault grbit flags, deduplicates FKs.
+Supports composite-FK position, nondefault grbit flags, deduplicates FKs, and annotates reverse-FK references.
 """
 import sys
 import subprocess
@@ -48,26 +48,37 @@ def main():
             continue
         lines = subprocess.check_output(["mdb-export", mdb_file, tbl], text=True).splitlines()
         row_counts[tbl] = max(len(lines) - 1, 0)
+    # include only non-empty tables
     include_tables = {tbl for tbl, cnt in row_counts.items() if cnt > 0}
 
-    # 2) Load and dedupe MSysRelationships
+    # 2) Load and dedupe MSysRelationships and build reverse mapping
     rels = defaultdict(list)
+    reverse_rels = defaultdict(list)
     seen = set()
     rel_csv = subprocess.check_output(["mdb-export", mdb_file, "MSysRelationships"], text=True)
     reader = csv.DictReader(io.StringIO(rel_csv))
     for r in reader:
-        key = (r['szObject'], r['szColumn'], r['szReferencedObject'], r['szReferencedColumn'])
+        child_tbl, child_col = r['szObject'], r['szColumn']
+        parent_tbl, parent_col = r['szReferencedObject'], r['szReferencedColumn']
+        key = (child_tbl, child_col, parent_tbl, parent_col)
         if key in seen:
             continue
         seen.add(key)
-        rels[r['szObject']].append({
-            'seq': int(r.get('icolumn','0') or 0),
-            'child': r['szColumn'],
-            'parent_tbl': r['szReferencedObject'],
-            'parent_col': r['szReferencedColumn'],
-            'ccolumn': int(r.get('ccolumn','0') or 0),
-            'grbit': int(r.get('grbit','0') or 0)
+        seq = int(r.get('icolumn','0') or 0)
+        ccol = int(r.get('ccolumn','0') or 0)
+        gr = int(r.get('grbit','0') or 0)
+        # forward mapping
+        rels[child_tbl].append({
+            'seq': seq,
+            'child': child_col,
+            'parent_tbl': parent_tbl,
+            'parent_col': parent_col,
+            'ccolumn': ccol,
+            'grbit': gr
         })
+        # reverse mapping only from non-empty child tables
+        if child_tbl in include_tables:
+            reverse_rels[(parent_tbl, parent_col)].append((child_tbl, child_col, ccol, seq, gr))
 
     # 3) Dump raw DDL and split into table blocks
     schema = subprocess.check_output(["mdb-schema", mdb_file], text=True)
@@ -76,7 +87,7 @@ def main():
     tbl_name = None
     for line in schema.splitlines(keepends=True):
         el = line.expandtabs(4)
-        # normalize lone '(' lines (remove leading spaces)
+        # normalize lone '(' lines
         if re.match(r'^\s*\(\s*$', el):
             el = '(\n'
         m = re.match(r'^CREATE TABLE \[(.+?)\]', el)
@@ -89,12 +100,13 @@ def main():
             blocks.append((tbl_name, cur))
             cur = None
 
-    # 4) Annotate each block with rowCount and FK comments
+    # 4) Annotate each block with rowCount, forward-FK, and reverse-FK comments
     annotated_blocks = []
     for tbl, lines in blocks:
         if tbl not in include_tables:
             continue
         cnt = row_counts[tbl]
+        # prepare forward-FK annotations
         fk_map = defaultdict(list)
         for fk in sorted(rels.get(tbl, []), key=lambda x: x['seq']):
             note = f"{fk['parent_tbl']}.{fk['parent_col']}"
@@ -109,37 +121,52 @@ def main():
         first = True
         for line in lines:
             if first:
-                line = line.rstrip('\r\n') + f" -- rowCount = {cnt}\n"
+                ann_line = line.rstrip('\r\n') + f" -- rowCount = {cnt}\n"
+                ann.append(ann_line)
                 first = False
-                ann.append(line)
                 continue
-            mcol = re.match(r'^(?P<prefix>\s*\[[^]]+\]\s*[^,]*,)(?:\s*)(?P<comment>--.*)?$', line.expandtabs(4))
+            el = line.expandtabs(4)
+            mcol = re.match(r'^(?P<prefix>\s*\[[^]]+\]\s*[^,]*,)(?:\s*)(?P<comment>--.*)?$', el)
             if mcol:
                 prefix = mcol.group('prefix')
                 col = re.match(r'^\s*\[([^]]+)\]', prefix).group(1)
                 comment = mcol.group('comment') or ''
+                # forward-FK
                 if col in fk_map:
                     comment = '-- FK -> ' + '; '.join(fk_map[col])
                     fk_map.pop(col)
-                line = prefix + (' ' + comment if comment else '') + '\n'
-            ann.append(line)
+                # reverse-FK
+                revs = reverse_rels.get((tbl, col), [])
+                if revs:
+                    rev_notes = []
+                    for child_tbl, child_col, ccol, seq, gr in revs:
+                        txt = f"{child_tbl}.{child_col}"
+                        if ccol > 1:
+                            txt += f"({seq}/{ccol})"
+                        flags = decode_grbit(gr)
+                        if flags:
+                            txt += ' [' + ','.join(flags) + ']'
+                        rev_notes.append(txt)
+                    # space-separated reverse list
+                    comment = (comment + ' ' if comment else '-- ') + 'FK <- ' + ' '.join(rev_notes)
+                new_line = prefix + ((' ' + comment) if comment else '') + '\n'
+                ann.append(new_line)
+            else:
+                ann.append(line)
         annotated_blocks.append((tbl, ann))
 
-    # 5) Align columns within blocks to three vertical columns
+    # 5) Align columns within blocks
     aligned_blocks = []
     for tbl, lines in annotated_blocks:
-        entries = []  # (idx, indent, name, typec, comment)
-        max_name = 0
-        max_type = 0
+        entries = []
+        max_name = max_type = 0
         for idx, line in enumerate(lines):
             el = line.expandtabs(4)
-            m = re.match(r'^(?P<indent>\s*)(?P<name>\[[^]]+\])\s*(?P<type>[^,]+,?)\s*(?P<comment>--.*)?$', el)
+            m = re.match(
+                r'^(?P<indent>\s*)(?P<name>\[[^]]+\])\s*(?P<type>[^,]+,?)\s*(?P<comment>--.*)?$', el)
             if not m:
                 continue
-            indent = m.group('indent')
-            name = m.group('name')
-            typec = m.group('type')
-            comment = m.group('comment') or ''
+            indent, name, typec, comment = m.group('indent'), m.group('name'), m.group('type'), m.group('comment') or ''
             entries.append((idx, indent, name, typec, comment))
             max_name = max(max_name, len(indent + name))
             max_type = max(max_type, len(typec))
@@ -148,11 +175,9 @@ def main():
             name_field = indent + name.ljust(max_name - len(indent))
             type_field = typec.ljust(max_type)
             if comment:
-                new_line = f"{name_field} {type_field} {comment}\n"
+                new_lines[idx] = f"{name_field} {type_field} {comment}\n"
             else:
-                # no trailing spaces after type
-                new_line = (name_field + ' ' + type_field).rstrip() + '\n'
-            new_lines[idx] = new_line
+                new_lines[idx] = (name_field + ' ' + type_field).rstrip() + '\n'
         aligned_blocks.append((tbl, new_lines))
 
     # 6) Sort by rowCount and write output
