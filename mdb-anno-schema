@@ -5,7 +5,7 @@
 # ]
 # ///
 
-# anno-schema-of-mdb
+# mdb-anno-schema
 
 #!/usr/bin/env python3
 """
@@ -13,6 +13,7 @@ annotate_schema.py
 
 Dump the schema of an Access .mdb, annotate inline FK relationships,
 add inline rowCount comments, omit empty tables, and sort tables by descending rowCount.
+Supports composite-FK position, nondefault grbit flags, and deduplicates FKs.
 """
 import sys
 import subprocess
@@ -20,6 +21,17 @@ import csv
 import re
 import io
 from collections import defaultdict
+
+def decode_grbit(grbit):
+    # Interpret common grbit flags
+    flags = []
+    if grbit & 1:
+        flags.append("RI")  # Referential Integrity enforced
+    if grbit & 256:
+        flags.append("CascadeUpdate")
+    if grbit & 512:
+        flags.append("CascadeDelete")
+    return flags
 
 def main():
     if len(sys.argv) != 2:
@@ -30,8 +42,7 @@ def main():
 
     # 1) List all user tables
     tables_output = subprocess.check_output(
-        ["mdb-tables", "-1", mdb_file],
-        text=True
+        ["mdb-tables", "-1", mdb_file], text=True
     )
     all_tables = [tbl.strip() for tbl in tables_output.splitlines() if tbl.strip()]
 
@@ -39,8 +50,7 @@ def main():
     row_counts = {}
     for tbl in all_tables:
         csv_text = subprocess.check_output(
-            ["mdb-export", mdb_file, tbl],
-            text=True
+            ["mdb-export", mdb_file, tbl], text=True
         )
         lines = csv_text.splitlines()
         row_counts[tbl] = max(len(lines) - 1, 0)
@@ -48,33 +58,40 @@ def main():
     # Include only non-empty tables
     include_tables = [tbl for tbl, cnt in row_counts.items() if cnt > 0]
 
-    # 3) Load FK relationships
+    # 3) Load FK relationships with metadata and dedupe
     rels_csv = subprocess.check_output(
-        ["mdb-export", mdb_file, "MSysRelationships"],
-        text=True
+        ["mdb-export", mdb_file, "MSysRelationships"], text=True
     )
     rels = defaultdict(list)
+    seen_fks = set()
     reader = csv.DictReader(io.StringIO(rels_csv))
     for row in reader:
+        key = (
+            row.get("szObject"), row.get("szColumn"),
+            row.get("szReferencedObject"), row.get("szReferencedColumn")
+        )
+        if key in seen_fks:
+            continue
+        seen_fks.add(key)
         rels[row["szObject"]].append({
             "seq": int(row.get("icolumn", "0") or 0),
             "child": row["szColumn"],
             "parent_tbl": row["szReferencedObject"],
-            "parent_col": row["szReferencedColumn"]
+            "parent_col": row["szReferencedColumn"],
+            "ccolumn": int(row.get("ccolumn", "0") or 0),
+            "grbit": int(row.get("grbit", "0") or 0)
         })
 
     # 4) Dump raw DDL
     schema_text = subprocess.check_output(
-        ["mdb-schema", mdb_file],
-        text=True
+        ["mdb-schema", mdb_file], text=True
     )
 
     # 5) Split into table blocks
     blocks = []
-    lines = schema_text.splitlines(keepends=True)
     current = None
     tbl_name = None
-    for line in lines:
+    for line in schema_text.splitlines(keepends=True):
         m_start = re.match(r'CREATE TABLE \[(.+?)\]', line)
         if m_start:
             tbl_name = m_start.group(1)
@@ -92,12 +109,17 @@ def main():
         if tbl not in include_tables:
             continue
         cnt = row_counts.get(tbl, 0)
-        # Build FK map: child column -> comments
+        # Build FK map: child column -> list of annotations
         fk_map = defaultdict(list)
         for fk in sorted(rels.get(tbl, []), key=lambda x: x["seq"]):
             note = f"{fk['parent_tbl']}.{fk['parent_col']}"
-            if row_counts.get(fk['parent_tbl'], 0) == 0:
-                note += " [0]"
+            # composite position
+            if fk.get('ccolumn', 1) > 1:
+                note += f"({fk['seq']}/{fk['ccolumn']})"
+            # grbit flags
+            flags = decode_grbit(fk.get('grbit', 0))
+            if flags:
+                note += " [" + ",".join(flags) + "]"
             fk_map[fk['child']].append(note)
 
         # Annotate lines
