@@ -1,0 +1,135 @@
+#!/usr/bin/env -S uv --quiet run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+# ]
+# ///
+
+# anno-schema-of-mdb
+
+#!/usr/bin/env python3
+"""
+annotate_schema.py
+
+Dump the schema of an Access .mdb, annotate inline FK relationships,
+add inline rowCount comments, omit empty tables, and sort tables by descending rowCount.
+"""
+import sys
+import subprocess
+import csv
+import re
+import io
+from collections import defaultdict
+
+def main():
+    if len(sys.argv) != 2:
+        print(f"Usage: {sys.argv[0]} path/to/file.mdb", file=sys.stderr)
+        sys.exit(1)
+
+    mdb_file = sys.argv[1]
+
+    # 1) List all user tables
+    tables_output = subprocess.check_output(
+        ["mdb-tables", "-1", mdb_file],
+        text=True
+    )
+    all_tables = [tbl.strip() for tbl in tables_output.splitlines() if tbl.strip()]
+
+    # 2) Compute row counts
+    row_counts = {}
+    for tbl in all_tables:
+        csv_text = subprocess.check_output(
+            ["mdb-export", mdb_file, tbl],
+            text=True
+        )
+        lines = csv_text.splitlines()
+        row_counts[tbl] = max(len(lines) - 1, 0)
+
+    # Include only non-empty tables
+    include_tables = [tbl for tbl, cnt in row_counts.items() if cnt > 0]
+
+    # 3) Load FK relationships
+    rels_csv = subprocess.check_output(
+        ["mdb-export", mdb_file, "MSysRelationships"],
+        text=True
+    )
+    rels = defaultdict(list)
+    reader = csv.DictReader(io.StringIO(rels_csv))
+    for row in reader:
+        rels[row["szObject"]].append({
+            "seq": int(row.get("icolumn", "0") or 0),
+            "child": row["szColumn"],
+            "parent_tbl": row["szReferencedObject"],
+            "parent_col": row["szReferencedColumn"]
+        })
+
+    # 4) Dump raw DDL
+    schema_text = subprocess.check_output(
+        ["mdb-schema", mdb_file],
+        text=True
+    )
+
+    # 5) Split into table blocks
+    blocks = []
+    lines = schema_text.splitlines(keepends=True)
+    current = None
+    tbl_name = None
+    for line in lines:
+        m_start = re.match(r'CREATE TABLE \[(.+?)\]', line)
+        if m_start:
+            tbl_name = m_start.group(1)
+            current = [line]
+        elif current is not None:
+            current.append(line)
+
+        if current and line.strip().endswith(");"):
+            blocks.append((tbl_name, current))
+            current = None
+
+    # 6) Annotate and collect blocks
+    annotated = []
+    for tbl, blk_lines in blocks:
+        if tbl not in include_tables:
+            continue
+        cnt = row_counts.get(tbl, 0)
+        # Build FK map: child column -> comments
+        fk_map = defaultdict(list)
+        for fk in sorted(rels.get(tbl, []), key=lambda x: x["seq"]):
+            note = f"{fk['parent_tbl']}.{fk['parent_col']}"
+            if row_counts.get(fk['parent_tbl'], 0) == 0:
+                note += " [0]"
+            fk_map[fk['child']].append(note)
+
+        # Annotate lines
+        annotated_lines = []
+        first = True
+        for line in blk_lines:
+            if first:
+                # Inline rowCount comment on CREATE TABLE line
+                line = re.sub(r'(\r?\n)$', f" -- rowCount = {cnt}" + r"\1", line)
+                first = False
+            # Column definition checks
+            m_col = re.match(r'^(\s*\[([^]]+)\].*)', line)
+            if m_col:
+                _, col = m_col.groups()
+                if col in fk_map:
+                    comment = "  -- FK -> " + "; ".join(fk_map[col])
+                    line = re.sub(r'(\r?\n)$', comment + r'\1', line)
+                    fk_map.pop(col, None)
+            annotated_lines.append(line)
+
+        annotated.append((tbl, annotated_lines))
+
+    # 7) Sort tables by descending rowCount
+    annotated.sort(key=lambda x: row_counts.get(x[0], 0), reverse=True)
+
+    # 8) Write output
+    out_path = mdb_file + "_annotated_schema.sql"
+    with open(out_path, "w") as f:
+        for _, lines in annotated:
+            f.writelines(lines)
+
+    print(f"Annotated schema written to: {out_path}")
+
+if __name__ == "__main__":
+    main()
