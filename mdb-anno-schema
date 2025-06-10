@@ -12,8 +12,9 @@
 annotate_schema.py
 
 Dump the schema of an Access .mdb, annotate inline FK relationships,
-add inline rowCount comments, omit empty tables, and sort tables by descending rowCount.
-Supports composite-FK position, nondefault grbit flags, and deduplicates FKs.
+add inline rowCount comments, omit empty tables, sort tables by descending rowCount,
+and align fieldName, fieldType, and comments into vertical columns.
+Supports composite-FK position, nondefault grbit flags, deduplicates FKs.
 """
 import sys
 import subprocess
@@ -23,10 +24,9 @@ import io
 from collections import defaultdict
 
 def decode_grbit(grbit):
-    # Interpret common grbit flags
     flags = []
     if grbit & 1:
-        flags.append("RI")  # Referential Integrity enforced
+        flags.append("RI")
     if grbit & 256:
         flags.append("CascadeUpdate")
     if grbit & 512:
@@ -37,121 +37,132 @@ def main():
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} path/to/file.mdb", file=sys.stderr)
         sys.exit(1)
-
     mdb_file = sys.argv[1]
 
-    # 1) List all user tables
-    tables_output = subprocess.check_output(
-        ["mdb-tables", "-1", mdb_file], text=True
-    )
-    all_tables = [tbl.strip() for tbl in tables_output.splitlines() if tbl.strip()]
-
-    # 2) Compute row counts
+    # 1) List tables and compute row counts
+    tables = subprocess.check_output(["mdb-tables", "-1", mdb_file], text=True).splitlines()
     row_counts = {}
-    for tbl in all_tables:
-        csv_text = subprocess.check_output(
-            ["mdb-export", mdb_file, tbl], text=True
-        )
-        lines = csv_text.splitlines()
-        row_counts[tbl] = max(len(lines) - 1, 0)
-
-    # Include only non-empty tables
-    include_tables = [tbl for tbl, cnt in row_counts.items() if cnt > 0]
-
-    # 3) Load FK relationships with metadata and dedupe
-    rels_csv = subprocess.check_output(
-        ["mdb-export", mdb_file, "MSysRelationships"], text=True
-    )
-    rels = defaultdict(list)
-    seen_fks = set()
-    reader = csv.DictReader(io.StringIO(rels_csv))
-    for row in reader:
-        key = (
-            row.get("szObject"), row.get("szColumn"),
-            row.get("szReferencedObject"), row.get("szReferencedColumn")
-        )
-        if key in seen_fks:
+    for tbl in tables:
+        tbl = tbl.strip()
+        if not tbl:
             continue
-        seen_fks.add(key)
-        rels[row["szObject"]].append({
-            "seq": int(row.get("icolumn", "0") or 0),
-            "child": row["szColumn"],
-            "parent_tbl": row["szReferencedObject"],
-            "parent_col": row["szReferencedColumn"],
-            "ccolumn": int(row.get("ccolumn", "0") or 0),
-            "grbit": int(row.get("grbit", "0") or 0)
+        lines = subprocess.check_output(["mdb-export", mdb_file, tbl], text=True).splitlines()
+        row_counts[tbl] = max(len(lines) - 1, 0)
+    include_tables = {tbl for tbl, cnt in row_counts.items() if cnt > 0}
+
+    # 2) Load and dedupe MSysRelationships
+    rels = defaultdict(list)
+    seen = set()
+    rel_csv = subprocess.check_output(["mdb-export", mdb_file, "MSysRelationships"], text=True)
+    reader = csv.DictReader(io.StringIO(rel_csv))
+    for r in reader:
+        key = (r['szObject'], r['szColumn'], r['szReferencedObject'], r['szReferencedColumn'])
+        if key in seen:
+            continue
+        seen.add(key)
+        rels[r['szObject']].append({
+            'seq': int(r.get('icolumn','0') or 0),
+            'child': r['szColumn'],
+            'parent_tbl': r['szReferencedObject'],
+            'parent_col': r['szReferencedColumn'],
+            'ccolumn': int(r.get('ccolumn','0') or 0),
+            'grbit': int(r.get('grbit','0') or 0)
         })
 
-    # 4) Dump raw DDL
-    schema_text = subprocess.check_output(
-        ["mdb-schema", mdb_file], text=True
-    )
-
-    # 5) Split into table blocks
+    # 3) Dump raw DDL and split into table blocks
+    schema = subprocess.check_output(["mdb-schema", mdb_file], text=True)
     blocks = []
-    current = None
+    cur = None
     tbl_name = None
-    for line in schema_text.splitlines(keepends=True):
-        m_start = re.match(r'CREATE TABLE \[(.+?)\]', line)
-        if m_start:
-            tbl_name = m_start.group(1)
-            current = [line]
-        elif current is not None:
-            current.append(line)
+    for line in schema.splitlines(keepends=True):
+        el = line.expandtabs(4)
+        # normalize lone '(' lines (remove leading spaces)
+        if re.match(r'^\s*\(\s*$', el):
+            el = '(\n'
+        m = re.match(r'^CREATE TABLE \[(.+?)\]', el)
+        if m:
+            tbl_name = m.group(1)
+            cur = [el]
+        elif cur is not None:
+            cur.append(el)
+        if cur and el.strip().endswith(');'):
+            blocks.append((tbl_name, cur))
+            cur = None
 
-        if current and line.strip().endswith(");"):
-            blocks.append((tbl_name, current))
-            current = None
-
-    # 6) Annotate and collect blocks
-    annotated = []
-    for tbl, blk_lines in blocks:
+    # 4) Annotate each block with rowCount and FK comments
+    annotated_blocks = []
+    for tbl, lines in blocks:
         if tbl not in include_tables:
             continue
-        cnt = row_counts.get(tbl, 0)
-        # Build FK map: child column -> list of annotations
+        cnt = row_counts[tbl]
         fk_map = defaultdict(list)
-        for fk in sorted(rels.get(tbl, []), key=lambda x: x["seq"]):
+        for fk in sorted(rels.get(tbl, []), key=lambda x: x['seq']):
             note = f"{fk['parent_tbl']}.{fk['parent_col']}"
-            # composite position
-            if fk.get('ccolumn', 1) > 1:
+            if fk['ccolumn'] > 1:
                 note += f"({fk['seq']}/{fk['ccolumn']})"
-            # grbit flags
-            flags = decode_grbit(fk.get('grbit', 0))
+            flags = decode_grbit(fk['grbit'])
             if flags:
-                note += " [" + ",".join(flags) + "]"
+                note += ' [' + ','.join(flags) + ']'
             fk_map[fk['child']].append(note)
 
-        # Annotate lines
-        annotated_lines = []
+        ann = []
         first = True
-        for line in blk_lines:
+        for line in lines:
             if first:
-                # Inline rowCount comment on CREATE TABLE line
-                line = re.sub(r'(\r?\n)$', f" -- rowCount = {cnt}" + r"\1", line)
+                line = line.rstrip('\r\n') + f" -- rowCount = {cnt}\n"
                 first = False
-            # Column definition checks
-            m_col = re.match(r'^(\s*\[([^]]+)\].*)', line)
-            if m_col:
-                _, col = m_col.groups()
+                ann.append(line)
+                continue
+            mcol = re.match(r'^(?P<prefix>\s*\[[^]]+\]\s*[^,]*,)(?:\s*)(?P<comment>--.*)?$', line.expandtabs(4))
+            if mcol:
+                prefix = mcol.group('prefix')
+                col = re.match(r'^\s*\[([^]]+)\]', prefix).group(1)
+                comment = mcol.group('comment') or ''
                 if col in fk_map:
-                    comment = "  -- FK -> " + "; ".join(fk_map[col])
-                    line = re.sub(r'(\r?\n)$', comment + r'\1', line)
-                    fk_map.pop(col, None)
-            annotated_lines.append(line)
+                    comment = '-- FK -> ' + '; '.join(fk_map[col])
+                    fk_map.pop(col)
+                line = prefix + (' ' + comment if comment else '') + '\n'
+            ann.append(line)
+        annotated_blocks.append((tbl, ann))
 
-        annotated.append((tbl, annotated_lines))
+    # 5) Align columns within blocks to three vertical columns
+    aligned_blocks = []
+    for tbl, lines in annotated_blocks:
+        entries = []  # (idx, indent, name, typec, comment)
+        max_name = 0
+        max_type = 0
+        for idx, line in enumerate(lines):
+            el = line.expandtabs(4)
+            m = re.match(r'^(?P<indent>\s*)(?P<name>\[[^]]+\])\s*(?P<type>[^,]+,?)\s*(?P<comment>--.*)?$', el)
+            if not m:
+                continue
+            indent = m.group('indent')
+            name = m.group('name')
+            typec = m.group('type')
+            comment = m.group('comment') or ''
+            entries.append((idx, indent, name, typec, comment))
+            max_name = max(max_name, len(indent + name))
+            max_type = max(max_type, len(typec))
+        new_lines = list(lines)
+        for idx, indent, name, typec, comment in entries:
+            name_field = indent + name.ljust(max_name - len(indent))
+            type_field = typec.ljust(max_type)
+            if comment:
+                new_line = f"{name_field} {type_field} {comment}\n"
+            else:
+                # no trailing spaces after type
+                new_line = (name_field + ' ' + type_field).rstrip() + '\n'
+            new_lines[idx] = new_line
+        aligned_blocks.append((tbl, new_lines))
 
-    # 7) Sort tables by descending rowCount
-    annotated.sort(key=lambda x: row_counts.get(x[0], 0), reverse=True)
-
-    # 8) Write output
-    out_path = mdb_file + "_annotated_schema.sql"
-    with open(out_path, "w") as f:
-        for _, lines in annotated:
-            f.writelines(lines)
-
+    # 6) Sort by rowCount and write output
+    aligned_blocks.sort(key=lambda x: row_counts[x[0]], reverse=True)
+    out_path = mdb_file + '_annotated_schema.sql'
+    with open(out_path, 'w') as f:
+        for _, lines in aligned_blocks:
+            for ln in lines:
+                f.write(ln)
     print(f"Annotated schema written to: {out_path}")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
