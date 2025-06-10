@@ -13,14 +13,17 @@ annotate_schema.py
 
 Dump the schema of an Access .mdb, annotate inline FK relationships,
 add inline rowCount comments, omit empty tables, sort tables by descending rowCount,
-and align fieldName, fieldType, and comments into vertical columns.
-Supports composite-FK position, nondefault grbit flags, deduplicates FKs, and annotates reverse-FK references.
+align fieldName, fieldType, and comments into vertical columns,
+and optionally print up to N sample rows per table with simple column alignment.
+Sample rows: only non-numeric values are quoted or escaped based on presence of quotes.
+Supports composite-FK position, nondefault grbit flags, deduplicates FKs, annotates reverse-FK references.
 """
 import sys
 import subprocess
 import csv
 import re
 import io
+import argparse
 from collections import defaultdict
 
 def decode_grbit(grbit):
@@ -33,11 +36,71 @@ def decode_grbit(grbit):
         flags.append("CascadeDelete")
     return flags
 
+
+def fetch_sample_rows(mdb_file, table, n):
+    proc = subprocess.Popen(["mdb-export", mdb_file, table], stdout=subprocess.PIPE, text=True)
+    reader = csv.reader(proc.stdout)
+    samples = []
+    try:
+        header = next(reader)
+    except StopIteration:
+        return []
+    for i, row in enumerate(reader):
+        if i >= n:
+            break
+        samples.append(row)
+    proc.stdout.close()
+    proc.wait()
+    return [header] + samples
+
+
+def format_rows(rows, indent='    '):
+    if not rows:
+        return []
+    quoted = []
+    num_re = re.compile(r'^-?\d+(?:\.\d+)?$')
+    for row in rows:
+        new = []
+        for cell in row:
+            s = str(cell)
+            # replace actual newlines, carriage returns, and tabs with literal escape sequences
+            s = s.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+            if num_re.match(s):
+                new.append(s)
+            else:
+                # escape quotes if both appear, otherwise wrap in the other
+                if '"' in s and "'" in s:
+                    dbl_count = s.count('"')
+                    sng_count = s.count("'")
+                    if dbl_count <= sng_count:
+                        s = '"' + s.replace('"', '\\"') + '"'
+                    else:
+                        s = "'" + s.replace("'", "\\'") + "'"
+                else:
+                    if '"' not in s:
+                        s = '"' + s + '"'
+                    else:
+                        s = "'" + s + "'"
+                new.append(s)
+        quoted.append(new)
+    cols = list(zip(*quoted))
+    widths = [max(len(str(cell)) for cell in col) for col in cols]
+    lines = []
+    for row in quoted:
+        parts = [str(cell).ljust(widths[i]) for i, cell in enumerate(row)]
+        line = indent + ' '.join(parts)
+        lines.append(line.rstrip() + '\n')
+    return lines
+
+
 def main():
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} path/to/file.mdb", file=sys.stderr)
-        sys.exit(1)
-    mdb_file = sys.argv[1]
+    parser = argparse.ArgumentParser(description="Annotate MDB schema with FKs and sample rows.")
+    parser.add_argument('mdb_file', help='Path to .mdb file')
+    parser.add_argument('-n', '--rows', type=int, default=0,
+                        help='Print up to N sample rows per table')
+    args = parser.parse_args()
+    mdb_file = args.mdb_file
+    sample_n = args.rows
 
     # 1) List tables and compute row counts
     tables = subprocess.check_output(["mdb-tables", "-1", mdb_file], text=True).splitlines()
@@ -46,9 +109,8 @@ def main():
         tbl = tbl.strip()
         if not tbl:
             continue
-        lines = subprocess.check_output(["mdb-export", mdb_file, tbl], text=True).splitlines()
-        row_counts[tbl] = max(len(lines) - 1, 0)
-    # include only non-empty tables
+        ln = subprocess.check_output(["mdb-export", mdb_file, tbl], text=True).splitlines()
+        row_counts[tbl] = max(len(ln) - 1, 0)
     include_tables = {tbl for tbl, cnt in row_counts.items() if cnt > 0}
 
     # 2) Load and dedupe MSysRelationships and build reverse mapping
@@ -58,33 +120,23 @@ def main():
     rel_csv = subprocess.check_output(["mdb-export", mdb_file, "MSysRelationships"], text=True)
     reader = csv.DictReader(io.StringIO(rel_csv))
     for r in reader:
-        child_tbl, child_col = r['szObject'], r['szColumn']
-        parent_tbl, parent_col = r['szReferencedObject'], r['szReferencedColumn']
-        key = (child_tbl, child_col, parent_tbl, parent_col)
+        ct, cc = r['szObject'], r['szColumn']
+        pt, pc = r['szReferencedObject'], r['szReferencedColumn']
+        key = (ct, cc, pt, pc)
         if key in seen:
             continue
         seen.add(key)
         seq = int(r.get('icolumn','0') or 0)
         ccol = int(r.get('ccolumn','0') or 0)
         gr = int(r.get('grbit','0') or 0)
-        # forward mapping
-        rels[child_tbl].append({
-            'seq': seq,
-            'child': child_col,
-            'parent_tbl': parent_tbl,
-            'parent_col': parent_col,
-            'ccolumn': ccol,
-            'grbit': gr
-        })
-        # reverse mapping only from non-empty child tables
-        if child_tbl in include_tables:
-            reverse_rels[(parent_tbl, parent_col)].append((child_tbl, child_col, ccol, seq, gr))
+        rels[ct].append({'seq': seq, 'child': cc, 'parent_tbl': pt, 'parent_col': pc, 'ccolumn': ccol, 'grbit': gr})
+        if ct in include_tables:
+            reverse_rels[(pt, pc)].append((ct, cc, ccol, seq, gr))
 
     # 3) Dump raw DDL and split into table blocks
     schema = subprocess.check_output(["mdb-schema", mdb_file], text=True)
     blocks = []
     cur = None
-    tbl_name = None
     for line in schema.splitlines(keepends=True):
         el = line.expandtabs(4)
         # normalize lone '(' lines
@@ -92,21 +144,20 @@ def main():
             el = '(\n'
         m = re.match(r'^CREATE TABLE \[(.+?)\]', el)
         if m:
-            tbl_name = m.group(1)
+            tn = m.group(1)
             cur = [el]
         elif cur is not None:
             cur.append(el)
         if cur and el.strip().endswith(');'):
-            blocks.append((tbl_name, cur))
+            blocks.append((tn, cur))
             cur = None
 
-    # 4) Annotate each block with rowCount, forward-FK, and reverse-FK comments
-    annotated_blocks = []
+    # 4) Annotate and collect blocks
+    annotated = []
     for tbl, lines in blocks:
         if tbl not in include_tables:
             continue
         cnt = row_counts[tbl]
-        # prepare forward-FK annotations
         fk_map = defaultdict(list)
         for fk in sorted(rels.get(tbl, []), key=lambda x: x['seq']):
             note = f"{fk['parent_tbl']}.{fk['parent_col']}"
@@ -116,54 +167,45 @@ def main():
             if flags:
                 note += ' [' + ','.join(flags) + ']'
             fk_map[fk['child']].append(note)
-
         ann = []
         first = True
         for line in lines:
             if first:
-                ann_line = line.rstrip('\r\n') + f" -- rowCount = {cnt}\n"
-                ann.append(ann_line)
+                ann.append(line.rstrip('\r\n') + f" -- rowCount = {cnt}\n")
                 first = False
                 continue
             el = line.expandtabs(4)
             mcol = re.match(r'^(?P<prefix>\s*\[[^]]+\]\s*[^,]*,)(?:\s*)(?P<comment>--.*)?$', el)
             if mcol:
                 prefix = mcol.group('prefix')
-                col = re.match(r'^\s*\[([^]]+)\]', prefix).group(1)
+                colname = re.match(r'^\s*\[([^]]+)\]', prefix).group(1)
                 comment = mcol.group('comment') or ''
-                # forward-FK
-                if col in fk_map:
-                    comment = '-- FK -> ' + '; '.join(fk_map[col])
-                    fk_map.pop(col)
-                # reverse-FK
-                revs = reverse_rels.get((tbl, col), [])
+                if colname in fk_map:
+                    comment = '-- FK -> ' + '; '.join(fk_map[colname])
+                    fk_map.pop(colname)
+                revs = reverse_rels.get((tbl, colname), [])
                 if revs:
                     rev_notes = []
-                    for child_tbl, child_col, ccol, seq, gr in revs:
-                        txt = f"{child_tbl}.{child_col}"
-                        if ccol > 1:
-                            txt += f"({seq}/{ccol})"
-                        flags = decode_grbit(gr)
-                        if flags:
-                            txt += ' [' + ','.join(flags) + ']'
+                    for ctbl, ccoln, ccol, seq, gr in revs:
+                        txt = f"{ctbl}.{ccoln}" + (f"({seq}/{ccol})" if ccol > 1 else '')
+                        fl = decode_grbit(gr)
+                        if fl:
+                            txt += ' [' + ','.join(fl) + ']'
                         rev_notes.append(txt)
-                    # space-separated reverse list
                     comment = (comment + ' ' if comment else '-- ') + 'FK <- ' + ' '.join(rev_notes)
-                new_line = prefix + ((' ' + comment) if comment else '') + '\n'
-                ann.append(new_line)
+                ann.append(prefix + (' ' + comment if comment else '') + '\n')
             else:
                 ann.append(line)
-        annotated_blocks.append((tbl, ann))
+        annotated.append((tbl, ann))
 
-    # 5) Align columns within blocks
-    aligned_blocks = []
-    for tbl, lines in annotated_blocks:
+    # 5) Align schema columns
+    aligned = []
+    for tbl, lines in annotated:
         entries = []
         max_name = max_type = 0
         for idx, line in enumerate(lines):
             el = line.expandtabs(4)
-            m = re.match(
-                r'^(?P<indent>\s*)(?P<name>\[[^]]+\])\s*(?P<type>[^,]+,?)\s*(?P<comment>--.*)?$', el)
+            m = re.match(r'^(?P<indent>\s*)(?P<name>\[[^]]+\])\s+(?P<type>[^,]+,?)(?:\s*)(?P<comment>--.*)?$', el)
             if not m:
                 continue
             indent, name, typec, comment = m.group('indent'), m.group('name'), m.group('type'), m.group('comment') or ''
@@ -174,20 +216,24 @@ def main():
         for idx, indent, name, typec, comment in entries:
             name_field = indent + name.ljust(max_name - len(indent))
             type_field = typec.ljust(max_type)
-            if comment:
-                new_lines[idx] = f"{name_field} {type_field} {comment}\n"
-            else:
-                new_lines[idx] = (name_field + ' ' + type_field).rstrip() + '\n'
-        aligned_blocks.append((tbl, new_lines))
+            new_lines[idx] = (f"{name_field} {type_field} {comment}" if comment else f"{name_field} {type_field}").rstrip() + '\n'
+        aligned.append((tbl, new_lines))
 
-    # 6) Sort by rowCount and write output
-    aligned_blocks.sort(key=lambda x: row_counts[x[0]], reverse=True)
-    out_path = mdb_file + '_annotated_schema.sql'
-    with open(out_path, 'w') as f:
-        for _, lines in aligned_blocks:
+    # 6) Sort and output with optional samples
+    aligned.sort(key=lambda x: row_counts[x[0]], reverse=True)
+    out_file = mdb_file + '_annotated_schema.sql'
+    with open(out_file, 'w') as f:
+        for tbl, lines in aligned:
             for ln in lines:
                 f.write(ln)
-    print(f"Annotated schema written to: {out_path}")
+            if sample_n > 0:
+                rows = fetch_sample_rows(mdb_file, tbl, sample_n)
+                if rows:
+                    f.write('\n    -- Sample rows:\n')
+                    for rline in format_rows(rows, indent='    '):
+                        f.write(rline)
+                    f.write('\n')
+    print(f"Annotated schema with samples written to: {out_file}")
 
 if __name__ == '__main__':
     main()
