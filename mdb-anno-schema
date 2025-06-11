@@ -26,6 +26,29 @@ import io
 import argparse
 from collections import defaultdict
 
+def format_datetime_match(match, mdy=True, short_year=False):
+    """Format datetime match groups into YYYYMMDD_HHMMSS format"""
+    if mdy:
+        # MM/DD/YYYY or MM/DD/YY format
+        month, day, year, hour, minute, second = match.groups()[:6]
+        if short_year:
+            # Convert 2-digit year to 4-digit by adding 2000
+            year = str(2000 + int(year))
+        ampm = match.group(7) if len(match.groups()) > 6 else None
+        if ampm:
+            hour = int(hour)
+            if ampm.upper() == 'PM' and hour != 12:
+                hour += 12
+            elif ampm.upper() == 'AM' and hour == 12:
+                hour = 0
+            hour = f"{hour:02d}"
+    else:
+        # YYYY-MM-DD format
+        year, month, day, hour, minute, second = match.groups()
+    
+    return f"{year}{month.zfill(2)}{day.zfill(2)}_{hour.zfill(2)}{minute}{second}"
+
+
 def decode_grbit(grbit):
     flags = []
     if grbit & 1:
@@ -51,21 +74,43 @@ def fetch_sample_rows(mdb_file, table, n):
     return [header] + samples if header else samples
 
 
-def format_rows(rows, indent='    '):
+def format_rows(rows, field_types, indent='    '):
     if not rows:
         return []
     quoted = []
-    num_re = re.compile(r'^-?\d+(?:\.\d+)?$')
     for row in rows:
         new = []
-        for cell in row:
+        for i, cell in enumerate(row):
             s = str(cell)
             # replace control chars with escape sequences
             s = s.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
-            # numeric test
-            if num_re.match(s):
-                new.append(s)
+            # determine if this field should be quoted based on type
+            should_quote = False
+            if field_types and i < len(field_types):
+                field_type = field_types[i].upper()
+                # Format DateTime fields as YYYYMMDD_HHMMSS
+                if 'DATETIME' in field_type and s and s != '':
+                    # Try to parse and reformat datetime strings
+                    # Common Access datetime formats: "MM/DD/YY HH:MM:SS", "MM/DD/YYYY HH:MM:SS AM/PM" or "YYYY-MM-DD HH:MM:SS"
+                    datetime_patterns = [
+                        (r'^(\d{1,2})/(\d{1,2})/(\d{2})\s+(\d{1,2}):(\d{2}):(\d{2})$', lambda m: format_datetime_match(m, mdy=True, short_year=True)),
+                        (r'^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)?', lambda m: format_datetime_match(m, mdy=True)),
+                        (r'^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})', lambda m: format_datetime_match(m, mdy=False))
+                    ]
+                    for pattern, formatter in datetime_patterns:
+                        match = re.match(pattern, s, re.IGNORECASE)
+                        if match:
+                            s = formatter(match)
+                            break
+                # Quote string-valued fields: TEXT, VARCHAR, CHAR, MEMO, etc.
+                should_quote = any(string_type in field_type for string_type in 
+                                   ['TEXT', 'VARCHAR', 'CHAR', 'MEMO', 'STRING'])
             else:
+                # Fallback: quote non-numeric values (original behavior)
+                num_re = re.compile(r'^-?\d+(?:\.\d+)?$')
+                should_quote = not num_re.match(s)
+            
+            if should_quote:
                 # quote or escape
                 if '"' in s and "'" in s:
                     dbl = s.count('"'); sng = s.count("'")
@@ -78,7 +123,7 @@ def format_rows(rows, indent='    '):
                         s = '"' + s + '"'
                     else:
                         s = "'" + s + "'"
-                new.append(s)
+            new.append(s)
         quoted.append(new)
     cols = list(zip(*quoted))
     widths = [max(len(str(c)) for c in col) for col in cols]
@@ -149,12 +194,14 @@ def main():
         if cur and el.strip().endswith(');'):
             blocks.append((tn, cur)); cur = None
 
-    # 4) Annotate blocks
+    # 4) Annotate blocks and extract field types
     annotated = []
+    table_field_types = {}  # Store field types for each table
     for tbl, lines in blocks:
         if tbl not in include_tables: continue
         cnt = row_counts[tbl]
         fk_map = defaultdict(list)
+        field_types = []  # Track field types for this table
         for fk in sorted(rels.get(tbl, []), key=lambda x: x['seq']):
             note = f"{fk['parent_tbl']}.{fk['parent_col']}"
             if fk['ccolumn']>1: note += f"({fk['seq']}/{fk['ccolumn']})"
@@ -169,6 +216,10 @@ def main():
             mcol = re.match(r'^(?P<p>\s*\[[^]]+\]\s*[^,]*,)(?:\s*)(?P<c>--.*)?$', el)
             if mcol:
                 p = mcol.group('p'); cn = re.match(r'^\s*\[([^]]+)\]',p).group(1)
+                # Extract field type from the column definition
+                type_match = re.search(r'\]\s+([^,\s]+)', p)
+                if type_match:
+                    field_types.append(type_match.group(1))
                 cmt = mcol.group('c') or ''
                 if cn in fk_map:
                     cmt = '-- FK -> ' + '; '.join(fk_map[cn]); fk_map.pop(cn)
@@ -184,6 +235,7 @@ def main():
                 ann.append(p + (' ' + cmt if cmt else '') + '\n')
             else:
                 ann.append(ln)
+        table_field_types[tbl] = field_types
         annotated.append((tbl, ann))
 
     # 5) Align schema
@@ -213,7 +265,8 @@ def main():
                 rows=fetch_sample_rows(mdb_file,tbl,sample_n)
                 if rows:
                     f.write('\n    -- Sample rows:\n')
-                    for r in format_rows(rows): f.write(r)
+                    field_types = table_field_types.get(tbl, [])
+                    for r in format_rows(rows, field_types): f.write(r)
                     f.write('\n')
     print(f"Annotated schema with samples written to: {out}")
 
