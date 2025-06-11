@@ -287,7 +287,7 @@ def main():
             if first:
                 ann.append(ln.rstrip('\r\n')+f" -- rowCount = {cnt}\n"); first=False; continue
             el = ln.expandtabs(4)
-            mcol = re.match(r'^(?P<p>\s*\[[^]]+\]\s*[^,]*,)(?:\s*)(?P<c>--.*)?$', el)
+            mcol = re.match(r'^(?P<p>\s*\[[^]]+\]\s*[^,]*,?)(?:\s*)(?P<c>--.*)?$', el)
             if mcol:
                 p = mcol.group('p'); cn = re.match(r'^\s*\[([^]]+)\]',p).group(1)
                 # Extract field type from the column definition
