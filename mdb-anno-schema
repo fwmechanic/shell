@@ -78,7 +78,7 @@ def format_rows(rows, field_types, indent='    '):
     if not rows:
         return []
     quoted = []
-    for row in rows:
+    for row_idx, row in enumerate(rows):
         new = []
         for i, cell in enumerate(row):
             s = str(cell)
@@ -86,7 +86,10 @@ def format_rows(rows, field_types, indent='    '):
             s = s.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
             # determine if this field should be quoted based on type
             should_quote = False
-            if field_types and i < len(field_types):
+            if row_idx == 0:
+                # First row is headers - never quote column names
+                should_quote = False
+            elif field_types and i < len(field_types):
                 field_type = field_types[i].upper()
                 # Format DateTime fields as YYYYMMDD_HHMMSS
                 if 'DATETIME' in field_type and s and s != '':
@@ -102,6 +105,12 @@ def format_rows(rows, field_types, indent='    '):
                         if match:
                             s = formatter(match)
                             break
+                # Format Boolean fields as "1 " or " 0"
+                elif 'BOOLEAN' in field_type or 'BIT' in field_type:
+                    if s == '1':
+                        s = '1 '
+                    elif s == '0':
+                        s = ' 0'
                 # Quote string-valued fields: TEXT, VARCHAR, CHAR, MEMO, etc.
                 should_quote = any(string_type in field_type for string_type in 
                                    ['TEXT', 'VARCHAR', 'CHAR', 'MEMO', 'STRING'])
@@ -129,7 +138,13 @@ def format_rows(rows, field_types, indent='    '):
     widths = [max(len(str(c)) for c in col) for col in cols]
     lines = []
     for row in quoted:
-        parts = [str(cell).ljust(widths[i]) for i, cell in enumerate(row)]
+        parts = []
+        for i, cell in enumerate(row):
+            # Right-justify integer fields
+            if field_types and i < len(field_types) and any(int_type in field_types[i].upper() for int_type in ['INTEGER', 'LONG', 'INT', 'COUNTER']):
+                parts.append(str(cell).rjust(widths[i]))
+            else:
+                parts.append(str(cell).ljust(widths[i]))
         line = indent + ' '.join(parts)
         lines.append(line.rstrip() + '\n')
     return lines
