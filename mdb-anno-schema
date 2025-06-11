@@ -74,9 +74,55 @@ def fetch_sample_rows(mdb_file, table, n):
     return [header] + samples if header else samples
 
 
+def should_omit_columns(rows, field_types):
+    """Determine which columns should be omitted based on empty non-string values."""
+    if not rows or len(rows) < 2:  # Need at least header + 1 data row
+        return set()
+    
+    header = rows[0]
+    data_rows = rows[1:]
+    omit_columns = set()
+    
+    for col_idx in range(len(header)):
+        if col_idx >= len(field_types):
+            continue
+            
+        field_type = field_types[col_idx].upper()
+        # Check if this is a string/text type column
+        is_string_type = any(string_type in field_type for string_type in 
+                           ['TEXT', 'VARCHAR', 'CHAR', 'MEMO', 'STRING'])
+        
+        if not is_string_type:
+            # For non-string types, check if all values are empty
+            all_empty = True
+            for row in data_rows:
+                if col_idx < len(row) and row[col_idx].strip():
+                    all_empty = False
+                    break
+            
+            if all_empty:
+                omit_columns.add(col_idx)
+    
+    return omit_columns
+
+
 def format_rows(rows, field_types, indent='    '):
     if not rows:
         return []
+    
+    # Determine which columns to omit
+    omit_columns = should_omit_columns(rows, field_types)
+    
+    # Filter out omitted columns from rows and field_types
+    if omit_columns:
+        filtered_rows = []
+        for row in rows:
+            filtered_row = [cell for i, cell in enumerate(row) if i not in omit_columns]
+            filtered_rows.append(filtered_row)
+        rows = filtered_rows
+        
+        filtered_field_types = [ft for i, ft in enumerate(field_types) if i not in omit_columns]
+        field_types = filtered_field_types
     quoted = []
     for row_idx, row in enumerate(rows):
         new = []
@@ -111,6 +157,19 @@ def format_rows(rows, field_types, indent='    '):
                         s = '1 '
                     elif s == '0':
                         s = ' 0'
+                # Format floating-point fields to max 3 decimal places
+                elif any(float_type in field_type for float_type in ['DOUBLE', 'FLOAT', 'REAL', 'DECIMAL', 'NUMERIC']):
+                    if s and s != '':
+                        try:
+                            val = float(s)
+                            # If it has a fractional part, format to 3 decimal places
+                            if val != int(val):
+                                s = f"{val:.3f}".rstrip('0').rstrip('.')
+                            else:
+                                s = str(int(val))
+                        except ValueError:
+                            # Keep original value if conversion fails
+                            pass
                 # Quote string-valued fields: TEXT, VARCHAR, CHAR, MEMO, etc.
                 should_quote = any(string_type in field_type for string_type in 
                                    ['TEXT', 'VARCHAR', 'CHAR', 'MEMO', 'STRING'])
