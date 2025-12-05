@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+die()  { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+have() { command -v "$1" &>/dev/null; }
+
+have yarn || die "yarn not installed"
+have jq || die "jq not installed"
+
+test -f package.json || die "no package.json found"
+
+jq . package.json >/dev/null 2>&1 || die "package.json is invalid"
+
+yarn licenses list --json 2>/dev/null \
+  | jq -r '
+      def spaces(n): reduce range(0; n) as $i (""; . + " ");
+
+      select(.type == "table")
+      | .data.body
+      | map(.[2])                          # license column
+      | group_by(.)                        # group same license
+      | map({ license: .[0], count: length })
+      | sort_by(-.count, .license)
+      | (map(.count | tostring | length) | max) as $w
+      | .[]
+      | (.count | tostring) as $s
+      | "\((spaces($w - ($s | length)) + $s)) \(.license)"
+    '
