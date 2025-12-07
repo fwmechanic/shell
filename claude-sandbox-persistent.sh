@@ -128,13 +128,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install pnpm globally
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Entrypoint script that installs/updates Claude Code on every container start
-RUN printf '#!/bin/bash\necho "Installing latest claude-code..."\nnpm install -g @anthropic-ai/claude-code@latest\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
-
 # Create home directory for non-root user (used with --userns=keep-id)
 RUN mkdir -p /home/claude && chmod 777 /home/claude
+
+# Entrypoint script that installs/updates Claude Code on every container start
+# Uses --prefix to install to user home (avoids permission issues with --userns=keep-id)
+RUN printf '#!/bin/bash\necho "Installing latest claude-code..."\nnpm install -g @anthropic-ai/claude-code@latest --prefix $HOME/.local\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+ENV PATH="/home/claude/.local/bin:$PATH"
+
+ENTRYPOINT ["/entrypoint.sh"]
 
 WORKDIR /workspace
 
@@ -176,3 +179,7 @@ else
         -w "/workspace" \
         ${IMAGE_NAME}:${IMAGE_TAG}
 fi
+
+echo ""
+echo "Container: $CONTAINER_NAME"
+echo "To remove: podman rm $CONTAINER_NAME"
