@@ -68,6 +68,35 @@ NEW_REPO_DIR="$(cd "$NEW_REPO_DIR" && pwd)"
 
 PLAN_FILENAME="$(basename "$PLAN_FILE")"
 
+# Track legacy repo HEAD for detecting changes between runs
+DIFFS_DIR="$(dirname "$NEW_REPO_DIR")/.current-impl-diffs-$(basename "$NEW_REPO_DIR")"
+[[ -d "$DIFFS_DIR" ]] || mkdir -p "$DIFFS_DIR"
+
+LEGACY_HEAD_FILE="$DIFFS_DIR/legacy-head"
+LEGACY_CURRENT_HEAD=$(git -C "$LEGACY_DIR" rev-parse HEAD 2>/dev/null || echo "")
+if [[ -n "$LEGACY_CURRENT_HEAD" ]]; then
+    if [[ -f "$LEGACY_HEAD_FILE" ]]; then
+        LEGACY_PREV_HEAD=$(cat "$LEGACY_HEAD_FILE")
+        if [[ "$LEGACY_PREV_HEAD" != "$LEGACY_CURRENT_HEAD" ]]; then
+            DIFF_FILENAME="legacy-${LEGACY_PREV_HEAD:0:8}..${LEGACY_CURRENT_HEAD:0:8}.diff"
+            DIFF_FILE="$DIFFS_DIR/$DIFF_FILENAME"
+            {
+                echo "# Legacy repo changes: $LEGACY_PREV_HEAD -> $LEGACY_CURRENT_HEAD"
+                echo ""
+                echo "## Commits"
+                git -C "$LEGACY_DIR" --no-pager log --oneline "${LEGACY_PREV_HEAD}..${LEGACY_CURRENT_HEAD}" 2>/dev/null || true
+                echo ""
+                echo "## Diff"
+                git -C "$LEGACY_DIR" --no-pager diff "${LEGACY_PREV_HEAD}..${LEGACY_CURRENT_HEAD}" 2>/dev/null || true
+            } > "$DIFF_FILE"
+            # Symlink with stable name for Claude to find
+            ln -sf "$DIFF_FILENAME" "$DIFFS_DIR/current-impl-changes.diff"
+            echo "Legacy repo changed: wrote $DIFF_FILE"
+        fi
+    fi
+    echo "$LEGACY_CURRENT_HEAD" > "$LEGACY_HEAD_FILE"
+fi
+
 # Container name from new-repo absolute path (strip /home/<user>/, replace / with -)
 CONTAINER_NAME="claude-$(echo "$NEW_REPO_DIR" | sed 's|^/home/[^/]*/||; s|/|-|g')"
 
@@ -76,6 +105,7 @@ cat <<EOF
 Plan file:      $PLAN_FILE -> /workspace/$PLAN_FILENAME (ro)
 Legacy project: $LEGACY_DIR -> /workspace/current-implementation (ro)
 New repo:       $NEW_REPO_DIR -> /workspace/new-implementation-repo (rw)
+Diffs dir:      $DIFFS_DIR -> /workspace/.current-impl-diffs (ro)
 Container:      $CONTAINER_NAME
 ==================================================
 EOF
@@ -100,15 +130,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install pnpm globally
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Install Claude Code globally
-RUN npm install -g @anthropic-ai/claude-code
+# Entrypoint script that installs/updates Claude Code on every container start
+RUN printf '#!/bin/bash\necho "Installing latest claude-code..."\nnpm install -g @anthropic-ai/claude-code@latest\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 
 # Create home directory for non-root user (used with --userns=keep-id)
 RUN mkdir -p /home/claude && chmod 777 /home/claude
 
 WORKDIR /workspace
 
-CMD ["claude"]
+CMD ["claude", "--dangerously-skip-permissions"]
 DOCKERFILE
 
     [[ $? -eq 0 ]] || die "Failed to build container image"
@@ -142,7 +174,7 @@ else
         -v "${PLAN_FILE}:/workspace/${PLAN_FILENAME}:ro" \
         -v "${LEGACY_DIR}:/workspace/current-implementation:ro" \
         -v "${NEW_REPO_DIR}:/workspace/new-implementation-repo:rw" \
-        -w "/workspace/new-implementation-repo" \
-        "${IMAGE_NAME}:${IMAGE_TAG}" \
-        claude --dangerously-skip-permissions
+        -v "${DIFFS_DIR}:/workspace/.current-impl-diffs:ro" \
+        -w "/workspace" \
+        ${IMAGE_NAME}:${IMAGE_TAG}
 fi
