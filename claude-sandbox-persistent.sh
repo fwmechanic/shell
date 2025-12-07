@@ -66,8 +66,6 @@ PLAN_FILE="$(cd "$(dirname "$PLAN_FILE")" && pwd)/$(basename "$PLAN_FILE")"
 LEGACY_DIR="$(cd "$LEGACY_DIR" && pwd)"
 NEW_REPO_DIR="$(cd "$NEW_REPO_DIR" && pwd)"
 
-PLAN_FILENAME="$(basename "$PLAN_FILE")"
-
 # Track legacy repo HEAD for detecting changes between runs
 DIFFS_DIR="$(dirname "$NEW_REPO_DIR")/.current-impl-diffs-$(basename "$NEW_REPO_DIR")"
 [[ -d "$DIFFS_DIR" ]] || mkdir -p "$DIFFS_DIR"
@@ -102,7 +100,7 @@ CONTAINER_NAME="claude-$(echo "$NEW_REPO_DIR" | sed 's|^/home/[^/]*/||; s|/|-|g'
 
 cat <<EOF
 === Claude Sandbox Configuration (Persistent) ===
-Plan file:      $PLAN_FILE -> /workspace/$PLAN_FILENAME (ro)
+Plan file:      $PLAN_FILE -> /workspace/plan-for-claude-to-implement.md (ro)
 Legacy project: $LEGACY_DIR -> /workspace/current-implementation (ro)
 New repo:       $NEW_REPO_DIR -> /workspace/new-implementation-repo (rw)
 Diffs dir:      $DIFFS_DIR -> /workspace/.current-impl-diffs (ro)
@@ -171,7 +169,7 @@ else
         --name "$CONTAINER_NAME" \
         --userns=keep-id \
         -e "HOME=${CONTAINER_HOME}" \
-        -v "${PLAN_FILE}:/workspace/${PLAN_FILENAME}:ro" \
+        -v "${PLAN_FILE}:/workspace/plan-for-claude-to-implement.md:ro" \
         -v "${LEGACY_DIR}:/workspace/current-implementation:ro" \
         -v "${NEW_REPO_DIR}:/workspace/new-implementation-repo:rw" \
         -v "${DIFFS_DIR}:/workspace/.current-impl-diffs:ro" \
