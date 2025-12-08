@@ -100,7 +100,7 @@ CONTAINER_NAME="claude-$(echo "$NEW_REPO_DIR" | sed 's|^/home/[^/]*/||; s|/|-|g'
 
 cat <<EOF
 === Claude Sandbox Configuration (Persistent) ===
-Plan file:      $PLAN_FILE -> /workspace/plan-for-claude-to-implement.md (ro)
+Plan file:      $PLAN_FILE -> /workspace/CLAUDE.md (ro)
 Legacy project: $LEGACY_DIR -> /workspace/current-implementation (ro)
 New repo:       $NEW_REPO_DIR -> /workspace/new-implementation-repo (rw)
 Diffs dir:      $DIFFS_DIR -> /workspace/.current-impl-diffs (ro)
@@ -133,7 +133,7 @@ RUN mkdir -p /home/claude && chmod 777 /home/claude
 
 # Entrypoint script that installs/updates Claude Code on every container start
 # Uses --prefix to install to user home (avoids permission issues with --userns=keep-id)
-RUN printf '#!/bin/bash\necho "Installing latest claude-code..."\nnpm install -g @anthropic-ai/claude-code@latest --prefix $HOME/.local\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+RUN printf '#!/bin/bash\necho "Installing latest claude-code..."\nnpm install -g @anthropic-ai/claude-code@latest --prefix $HOME/.local\ncd /workspace\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENV PATH="/home/claude/.local/bin:$PATH"
 
@@ -172,7 +172,7 @@ else
         --name "$CONTAINER_NAME" \
         --userns=keep-id \
         -e "HOME=${CONTAINER_HOME}" \
-        -v "${PLAN_FILE}:/workspace/plan-for-claude-to-implement.md:ro" \
+        -v "${PLAN_FILE}:/workspace/CLAUDE.md:ro" \
         -v "${LEGACY_DIR}:/workspace/current-implementation:ro" \
         -v "${NEW_REPO_DIR}:/workspace/new-implementation-repo:rw" \
         -v "${DIFFS_DIR}:/workspace/.current-impl-diffs:ro" \
