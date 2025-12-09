@@ -133,6 +133,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install pnpm globally
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
+# Install Playwright with Chromium for browser testing
+RUN npm install -g playwright && playwright install --with-deps chromium
+
+# Firebase emulators require Java
+RUN apt-get update && apt-get install -y --no-install-recommends default-jre-headless
+
+# Firebase CLI
+RUN npm install -g firebase-tools
+
 # Create home directory for non-root user (used with --userns=keep-id)
 RUN mkdir -p /home/claude && chmod 777 /home/claude
 
