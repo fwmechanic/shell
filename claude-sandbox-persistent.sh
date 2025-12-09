@@ -70,6 +70,10 @@ NEW_REPO_DIR="$(cd "$NEW_REPO_DIR" && pwd)"
 DIFFS_DIR="$(dirname "$NEW_REPO_DIR")/.current-impl-diffs-$(basename "$NEW_REPO_DIR")"
 [[ -d "$DIFFS_DIR" ]] || mkdir -p "$DIFFS_DIR"
 
+# State file for tracking phase progress
+STATE_FILE="$(dirname "$NEW_REPO_DIR")/.claude-state-$(basename "$NEW_REPO_DIR").json"
+[[ -f "$STATE_FILE" ]] || echo '{"phase":1}' > "$STATE_FILE"
+
 LEGACY_HEAD_FILE="$DIFFS_DIR/legacy-head"
 LEGACY_CURRENT_HEAD=$(git -C "$LEGACY_DIR" rev-parse HEAD 2>/dev/null || echo "")
 if [[ -n "$LEGACY_CURRENT_HEAD" ]]; then
@@ -104,6 +108,7 @@ Plan file:      $PLAN_FILE -> /workspace/CLAUDE.md (ro)
 Legacy project: $LEGACY_DIR -> /workspace/current-implementation (ro)
 New repo:       $NEW_REPO_DIR -> /workspace/new-implementation-repo (rw)
 Diffs dir:      $DIFFS_DIR -> /workspace/.current-impl-diffs (ro)
+State file:     $STATE_FILE -> /workspace/claude-phase.json (rw)
 Container:      $CONTAINER_NAME
 ==================================================
 EOF
@@ -141,6 +146,26 @@ ENTRYPOINT ["/entrypoint.sh"]
 
 WORKDIR /workspace
 
+# Hook scripts for session state tracking
+RUN printf '%s\n' \
+  '#!/bin/sh' \
+  'phase=$(jq -r ".phase" /workspace/claude-phase.json 2>/dev/null || echo 1)' \
+  'echo ""' \
+  'echo "═══════════════════════════════════════════════════"' \
+  'echo "CURRENT STATE: Phase $phase"' \
+  'echo "Re-read /workspace/CLAUDE.md section \"Phase $phase\" before proceeding."' \
+  'echo "═══════════════════════════════════════════════════"' \
+  > /usr/local/bin/hook-session-start && chmod +x /usr/local/bin/hook-session-start
+
+RUN printf '%s\n' \
+  '#!/bin/sh' \
+  'phase=$(jq -r ".phase" /workspace/claude-phase.json 2>/dev/null || echo 1)' \
+  'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreCompact\",\"additionalContext\":\"CRITICAL: Current phase is $phase. Your full plan is in /workspace/CLAUDE.md. Re-read it before continuing.\"}}"' \
+  > /usr/local/bin/hook-precompact && chmod +x /usr/local/bin/hook-precompact
+
+# Project-level hooks config referencing the scripts
+RUN mkdir -p /workspace/.claude && echo '{"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"/usr/local/bin/hook-session-start"}]}],"PreCompact":[{"matcher":"","hooks":[{"type":"command","command":"/usr/local/bin/hook-precompact"}]}]}}' > /workspace/.claude/settings.json
+
 CMD ["claude", "--dangerously-skip-permissions"]
 DOCKERFILE
 
@@ -176,6 +201,7 @@ else
         -v "${LEGACY_DIR}:/workspace/current-implementation:ro" \
         -v "${NEW_REPO_DIR}:/workspace/new-implementation-repo:rw" \
         -v "${DIFFS_DIR}:/workspace/.current-impl-diffs:ro" \
+        -v "${STATE_FILE}:/workspace/claude-phase.json:rw" \
         -w "/workspace" \
         ${IMAGE_NAME}:${IMAGE_TAG}
 fi
