@@ -144,7 +144,7 @@ my @filters = (
    # convert exo-ASCII chars to punct
    sub($fn,$) { return $fn =~ s!\xe2\x80!-!rg; },
    sub($fn,$) { return $fn =~ s!\x99!$q1!rg; },
-   sub($fn,$) { return $fn =~ s!–!-!rg; },
+   sub($fn,$) { return $fn =~ s![–:]!-!rg; },
 
    sub($fn,$) { return $fn =~ s!^Letmeread\.net_!!r; },
    sub($fn,$) { return $fn =~ s![\s\.]\(z\-lib\.org\)!!rg; },

@@ -134,7 +134,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Install Playwright with Chromium for browser testing
-RUN npm install -g playwright && playwright install --with-deps chromium
+RUN apt-get update && apt-get install -y --no-install-recommends libglib2.0-0 \
+    && npm install -g playwright && playwright install --with-deps chromium
 
 # Firebase emulators require Java
 RUN apt-get update && apt-get install -y --no-install-recommends default-jre-headless

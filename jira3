@@ -10,11 +10,14 @@ see() ( { set -x; } 2>/dev/null ; "$@" ) ;
 # Unfortunately, curlconf (-K) files can only define curl-specific 'key = val'
 # (e.g. 'user = username:passwd') or curl cmdline options, so we define JIRA_HOST
 # in a like-named .env file:
-curlconf="$HOME/.curl-jira-test"  # contains 'user = username:passwd' and '-H "Accept: application/json"'
+
+confnm="${JIRA3_CONFNM:-test}"
+
+curlconf="$HOME/.curl-jira-$confnm"  # contains 'user = username:passwd' and '-H "Accept: application/json"'
 
 curlenv="$curlconf.env"
-test -f "$curlconf" || die "curlconf is not a file: $curlconf"
-test -f "$curlenv"  || die  "curlenv is not a file: $curlenv"
+test -f "$curlconf" || die "curlconf is not a file: $curlconf" ; echo "$curlconf" ; cat "$curlconf"
+test -f "$curlenv"  || die  "curlenv is not a file: $curlenv"  ; echo "$curlenv"  ; cat "$curlenv"
 
 set -o allexport  # .env type files contain only unadorned variable assignments
 source "$curlenv"
@@ -24,6 +27,12 @@ test "$JIRA_HOST" || die "JIRA_HOST not defined in $curlenv"
 echo "$JIRA_HOST"
 jx='.[]?'  # Safely iterate if it's an array; do nothing otherwise
 case "$1" in
+  raw)  shift ; ep="$1" ; see curl -K "$curlconf" "${JIRA_HOST}/rest/api/3/$ep" | jq '.' ; exit 0 ;;
+  rawa) shift ; ep="$1" ; see curl -K "$curlconf" "${JIRA_HOST}/rest/api/3/$ep" | jq '.[]?' ; exit 0 ;;
+
+  raw)  shift ; ep="$1" ; see curl -sS -K "$curlconf" "${JIRA_HOST}/rest/api/3/$ep" | jq '.' ; exit 0 ;;
+  rawa) shift ; ep="$1" ; see curl -sS -K "$curlconf" "${JIRA_HOST}/rest/api/3/$ep" | jq '.[]?' ; exit 0 ;;
+
   project)  ep="$1" jx='.[] | [.id, .key, .name, .projectTypeKey, .simplified, .isPrivate, .style]' ;;
             # style: "next-gen"->TMP | "classic"->CMP
   status)   ep="$1" jx='.[] | [
@@ -74,10 +83,16 @@ case "$1" in
             #    status, that status becomes globally available, not scoped
             #    to one project.
 
-  *)        ep="$1" ; curl -sS -K "$curlconf" "${JIRA_HOST}/rest/api/3/$ep" | jq . ; exit 0 ;;
+  issuetype/project/?*)  # NOTE!!! this REQUIRES a '?projectId=10066' suffix; use 'status' tail to obtain.  Also takes a level=-1/0/1 to filter by Subtask/Base/Epic
+                         # EX: `jira3 'issuetype/project/?projectId=10066&level=0'` returns all base issue types available to projectId=10066
+            ep="$1" jx='.[] |
+[.id, .subtask, .hierarchyLevel, .untranslatedName, .description]' ;;
+                                                                              #
+  *)        die "unrecognized url-tail: try raw or rawa to experiment" ;;
 esac
 
 ep="/rest/api/3/$ep"
 
 echo "$ep $jx"
 curl -sS -K "$curlconf" "${JIRA_HOST}$ep" | jq -r "$jx | @tsv" | column -t -s $'\t'
+#see curl -K "$curlconf" "${JIRA_HOST}$ep"

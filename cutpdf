@@ -15,11 +15,25 @@ do1file() (
    filename="$(basename -- "${fullname}")"  # ; echo "filename  $filename"
    extension="${filename##*.}"              # ; echo "extension $extension"
    basename="${filename%.*}"                # ; echo "basename  $basename"
-   # logical parameters:
-   outfnm="$dirname/${basename}_cut.pdf"
+   
+   # Create temporary output file first
+   temp_outfnm="$dirname/${basename}_cut_temp.pdf"
    echo "fullname=$fullname"
-   echo "outfnm=$outfnm"
-   see "$qpdf" "$fullname" --pages . "$@" -- "$outfnm" || die "$qpdf [$outfnm] failed"
+   see "$qpdf" "$fullname" --pages . "$@" -- "$temp_outfnm" || die "$qpdf [$temp_outfnm] failed"
+   
+   # Count pages in the output file and get first page info
+   numPgs=$("$qpdf" --show-npages "$temp_outfnm")
+   pgFirst="$1"
+   if [[ "$pgFirst" =~ ^([0-9]+) ]]; then
+      pgFirst="${BASH_REMATCH[1]}"
+   else
+      pgFirst="1"
+   fi
+   
+   # Generate final filename and rename
+   outfnm="$dirname/${basename}_cut${pgFirst}L${numPgs}.pdf"
+   mv "$temp_outfnm" "$outfnm" || die "Failed to rename to $outfnm"
+   echo "outfnm $outfnm"
    )
 
 do1file "$@"

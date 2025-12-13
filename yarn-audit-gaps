@@ -1,18 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Usage: ./yarn-audit-gaps.sh [minSeverity]
+# minSeverity: critical, high, moderate, low, info (default: low)
+min_severity="${1:-low}"
+
+# Map severity to numeric threshold
+declare -A severity_level=([info]=0 [low]=1 [moderate]=2 [high]=3 [critical]=4)
+min_level=${severity_level[$min_severity]:-1}
+
+if [[ -z "${severity_level[$min_severity]:-}" ]]; then
+  echo "Invalid severity: $min_severity (use: critical, high, moderate, low, info)" >&2
+  exit 1
+fi
+
 # Extract advisories from yarn audit NDJSON
 advisories=$(yarn audit --json 2>/dev/null || true)
 
-# Parse advisories into a deduplicated list (highest severity wins)
-parsed=$(echo "$advisories" | jq -s '
+# Parse advisories into a deduplicated list (highest severity wins), filtered by minSeverity
+parsed=$(echo "$advisories" | jq -s --argjson min "$min_level" '
+  def sev_num: {critical:4,high:3,moderate:2,low:1,info:0}[.] // -1;
   [.[] | select(.type == "auditAdvisory") | .data.advisory]
+  | map(select(.severity | sev_num >= $min))
   | group_by(.module_name)
-  | map(
-      sort_by(
-        (.severity | {critical:4,high:3,moderate:2,low:1,info:0}[.] // -1)
-      ) | last
-    )
+  | map(sort_by(.severity | sev_num) | last)
   | map({
       module: .module_name,
       patched: .patched_versions,
@@ -24,11 +35,9 @@ parsed=$(echo "$advisories" | jq -s '
 # Function to look up version from yarn.lock
 get_version() {
   local pkg="$1"
-  # Match "pkg@version": or pkg@version: then grab the version line
   awk -v pkg="$pkg" '
     BEGIN { found = 0 }
     /^[^ ]/ {
-      # Check if this line contains our package name
       if (match($0, "\"?" pkg "@[^:]+\":?") || match($0, "^" pkg "@[^:]+:")) {
         found = 1
         next
@@ -43,11 +52,99 @@ get_version() {
   ' yarn.lock
 }
 
-# Add current versions from yarn.lock
-echo "$parsed" | jq -c '.[]' | while read -r item; do
-  module=$(echo "$item" | jq -r '.module')
-  current=$(get_version "$module")
-  echo "$item" | jq --arg current "${current:-unknown}" '. + {current: $current}'
-done | jq -s '
-  sort_by((.severity | {critical:0,high:1,moderate:2,low:3,info:4}[.] // 5))
+# Function to get semver range from package.json (deps + devDeps)
+get_pkg_range() {
+  local pkg="$1"
+  jq -r --arg p "$pkg" '
+    (.dependencies[$p] // .devDependencies[$p] // .peerDependencies[$p] // empty)
+  ' package.json 2>/dev/null || echo ""
+}
+
+# Extract minimum version from patched string like ">=4.17.21" or ">=1.2.3 <2.0.0"
+extract_min_version() {
+  echo "$1" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
+}
+
+# Parse semver into components
+parse_semver() {
+  echo "$1" | awk -F. '{print $1, $2, $3}' | sed 's/[^0-9 ]//g'
+}
+
+# Check if patched version requires --latest (outside current range)
+needs_latest() {
+  local range="$1"
+  local patched="$2"
+  local current="$3"
+
+  [[ -z "$range" || -z "$patched" || -z "$current" ]] && echo "false" && return
+
+  local min_patched
+  min_patched=$(extract_min_version "$patched")
+  [[ -z "$min_patched" ]] && echo "false" && return
+
+  read -r cur_major cur_minor cur_patch <<< "$(parse_semver "$current")"
+  read -r patch_major patch_minor patch_patch <<< "$(parse_semver "$min_patched")"
+
+  # Default to safe values
+  cur_major=${cur_major:-0}; cur_minor=${cur_minor:-0}; cur_patch=${cur_patch:-0}
+  patch_major=${patch_major:-0}; patch_minor=${patch_minor:-0}; patch_patch=${patch_patch:-0}
+
+  # Caret (^): allows minor+patch changes within same major
+  if [[ "$range" == ^* ]]; then
+    if (( patch_major > cur_major )); then
+      echo "true"; return
+    fi
+  # Tilde (~): allows only patch changes within same minor
+  elif [[ "$range" == ~* ]]; then
+    if (( patch_major > cur_major || patch_minor > cur_minor )); then
+      echo "true"; return
+    fi
+  # Exact version or other: any change needs --latest
+  elif [[ "$range" =~ ^[0-9] ]]; then
+    if (( patch_major > cur_major || patch_minor > cur_minor || patch_patch > cur_patch )); then
+      echo "true"; return
+    fi
+  fi
+
+  echo "false"
+}
+
+# Build final JSON with current versions and range info
+result=$(
+  echo "$parsed" | jq -c '.[]' | while read -r item; do
+    module=$(echo "$item" | jq -r '.module')
+    patched=$(echo "$item" | jq -r '.patched')
+    current=$(get_version "$module")
+    range=$(get_pkg_range "$module")
+    needs_flag=$(needs_latest "$range" "$patched" "$current")
+
+    echo "$item" | jq \
+      --arg current "${current:-unknown}" \
+      --arg range "${range:-}" \
+      --arg needs_latest "$needs_flag" \
+      '. + {current: $current, range: $range, needs_latest: ($needs_latest == "true")}'
+  done | jq -s 'sort_by((.severity | {critical:0,high:1,moderate:2,low:3,info:4}[.] // 5))'
+)
+
+# Output JSON
+echo "$result"
+
+# Output upgrade commands (for direct deps)
+echo ""
+echo "# Upgrade commands (direct dependencies only):"
+echo "$result" | jq -r '.[] |
+  if .needs_latest then
+    "yarn upgrade \(.module) --latest  # \(.current) -> \(.patched) (outside \(.range))"
+  else
+    "yarn upgrade \(.module)  # \(.current)"
+  end
+'
+
+# Output resolutions block (for transitive deps)
+echo ""
+echo "# Resolutions for package.json (forces version for transitive deps):"
+echo "$result" | jq -r '
+  "\"resolutions\": {",
+  (to_entries | map("  \"\(.value.module)\": \"\(.value.patched)\"") | join(",\n")),
+  "}"
 '

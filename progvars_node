@@ -1,37 +1,62 @@
 #!/usr/bin/env bash
-# env-report.sh  --  report process.env.* references in a project
-#   o Prints NAME=VALUE (or NAME=LEN for *_KEY) first
-#   o Then a blank line
-#   o Then all names that are unset or empty in the current shell
-# Usage: env-report.sh [PATH ...]   (defaults to .)
+# env-report.sh
+# 1) defined non-*_KEY variables                -> NAME=VALUE
+# 2) every *_KEY reference                      -> NAME=LEN or NAME
+# 3) undefined / empty non-*_KEY variables      -> NAME
+# a blank line separates each section
 
-## 1. collect unique variable names with ripgrep -> sort -u
-mapfile -t all_vars < <(
-  rg -o --no-filename --no-line-number \
+mapfile -t vars < <(
+  rg -g '!node_modules/**' -o --no-filename --no-line-number \
      --replace '$1' \
      'process\.env\.([A-Za-z_][A-Za-z0-9_]*)' "${@:-.}" |
   sort -u
 )
 
-## 2. emit defined vars immediately, stash empty/unset ones
-undefined=()
+defined_nonkey=()
+key_section=()
+undefined_nonkey=()
 
-for var in "${all_vars[@]}"; do
-  val="${!var}"            # indirect expansion: value of $var, could be empty
+for v in "${vars[@]}"; do
+  val="${!v}"                      # value (may be empty)
 
-  if [[ -n $val ]]; then               # non-empty
-    if [[ $var == *_KEY ]]; then
-      printf '%s=%d\n' "$var" "${#val}"
+  if [[ $v == *_KEY ]]; then       # --- *_KEY section ---
+    if [[ -n $val ]]; then
+      key_section+=("$v=${#val}")  # show length
     else
-      printf '%s=%s\n' "$var" "$val"
+      key_section+=("$v")          # unset/empty key
     fi
-  else                                  # empty or undefined -> save for later
-    undefined+=("$var")
+
+  elif [[ -n $val ]]; then         # --- defined non-key ---
+    defined_nonkey+=("$v=$val")
+
+  else                             # --- undefined non-key ---
+    undefined_nonkey+=("$v")
   fi
 done
 
-## 3. print the "missing" ones, if any
-if ((${#undefined[@]})); then
-  printf '\n'               # blank line separator
-  printf '%s\n' "${undefined[@]}"
-fi
+printf '%s\n' "${defined_nonkey[@]}"
+
+((${#key_section[@]})) && {
+  printf '\n'
+  printf '%s\n' "${key_section[@]}"
+}
+
+((${#undefined_nonkey[@]})) && {
+  printf '\n'
+  printf '%s\n' "${undefined_nonkey[@]}"
+}
+
+# extra credit (huge output so mostly not useful):
+# examine references in node_modules (which by default
+# is ignored by rg (at least due to our .gitignore rules)
+#
+# mapfile -t nm_vars < <(
+#   rg -u -g 'node_modules/**' --type js -o --no-filename --no-line-number \
+#      --replace '$1' \
+#      'process\.env\.([A-Za-z_][A-Za-z0-9_]*)' "${@:-.}" |
+#   sort -u
+# )
+#
+# printf "\nfrom node_modules\n"
+# printf '\n%s' "${nm_vars[@]}"
+# printf '\n'
