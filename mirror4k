@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -uo pipefail  # NO -e!!!
+
+# Logging (file + stderr) since this script is run by X (noninteractively)
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}"
+LOG_FILE="${LOG_FILE:-$LOG_DIR/mirror4k.log}"
+mkdir -p "$LOG_DIR" ; echo "LOG_DIR $LOG_DIR"
+ts() { printf '%(%Y%m%d_%H%M%S)T' -1; }  # bash builtin timestamp
+log() {
+  local level="$1"; shift
+  printf '%s [%s] %s\n' "$(ts)" "$level" "$*" | tee -a "$LOG_FILE" >&2
+}
+info()  { log INFO  "$*"; }
+warn()  { log WARN  "$*"; }
+error() { log ERROR "$*"; }
+die() { printf '%s [%s] %s\n' "$(ts)" "$level" "${@+$@$'\n'}" | tee -a "$LOG_FILE" >&2 ; exit 1 ; }
+
+# die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+need() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+need xrandr
+
+[[ -n "${DISPLAY-}" ]] || die "DISPLAY is not set; run this inside your X11 session"
+
+#
+# scenario: primary laptop screen is 1080p and unusable; I want to connect a
+# 4K TV to HDMI and use it as the system's primary display, while avoiding
+# weird behaviors like all of the displayed windows being migrated to the
+# primary/unusable display when I power-off the TV.
+#
+# The soln impl here is to have the 4K TV mirror the primary display while
+# being in 4K resolution mode in all respects.
+#
+
+# Run
+# xrandr --query
+# to discover the DISP_ and RES_ values to use for your displays
+
+DISP_primary="eDP"  RES_DISP_primary="1920x1080"
+DISP_4k="HDMI-A-0"  RES_DISP_4k="3840x2160"
+
+# Wait up to ~10 seconds for HDMI to appear connected
+for _ in {1..20}; do
+  if xrandr --query | grep -qP "^\Q$DISP_4k connected"; then
+    if see xrandr --fb "$RES_DISP_4k" \
+           --output "$DISP_4k" --mode "$RES_DISP_4k" --primary \
+           --output "$DISP_primary"  --mode "$RES_DISP_primary" --scale-from "$RES_DISP_4k" --same-as "$DISP_4k"
+      then
+      info "mirror-setup successful!"
+      exit 0
+    fi
+    warn "FAILED to mirror $DISP_primary ($RES_DISP_primary) to $DISP_4k ($RES_DISP_4k)"
+  fi
+  sleep 0.5
+done
+
+error "FAILED: '$DISP_4k connected' never found"
+exit 1
