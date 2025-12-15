@@ -2,10 +2,24 @@
 
 set -uo pipefail  # NO -e!!!
 
-die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+# Logging (file + stderr) since this script is run by X (noninteractively)
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}"
+LOG_FILE="${LOG_FILE:-$LOG_DIR/mirror4k.log}"
+mkdir -p "$LOG_DIR" ; echo "LOG_DIR $LOG_DIR"
+ts() { printf '%(%Y%m%d_%H%M%S)T' -1; }  # bash builtin timestamp
+log() {
+  local level="$1"; shift
+  printf '%s [%s] %s\n' "$(ts)" "$level" "$*" | tee -a "$LOG_FILE" >&2
+}
+info()  { log INFO  "$*"; }
+warn()  { log WARN  "$*"; }
+error() { log ERROR "$*"; }
+die() { printf '%s [%s] %s\n' "$(ts)" "$level" "${@+$@$'\n'}" | tee -a "$LOG_FILE" >&2 ; exit 1 ; }
+
+# die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" )
-dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
-dieifnotinpath xrandr
+need() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+need xrandr
 
 [[ -n "${DISPLAY-}" ]] || die "DISPLAY is not set; run this inside your X11 session"
 
@@ -33,13 +47,13 @@ for _ in {1..20}; do
            --output "$DISP_4k" --mode "$RES_DISP_4k" --primary \
            --output "$DISP_primary"  --mode "$RES_DISP_primary" --scale-from "$RES_DISP_4k" --same-as "$DISP_4k"
       then
-      echo "mirror-setup successful!"
+      info "mirror-setup successful!"
       exit 0
     fi
-    echo "FAILED to mirror $DISP_primary ($RES_DISP_primary) to $DISP_4k ($RES_DISP_4k)"
+    warn "FAILED to mirror $DISP_primary ($RES_DISP_primary) to $DISP_4k ($RES_DISP_4k)"
   fi
   sleep 0.5
 done
 
-echo "FAILED: '$DISP_4k connected' never found"
+error "FAILED: '$DISP_4k connected' never found"
 exit 1
