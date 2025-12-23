@@ -13,15 +13,28 @@ chkpkg autofs
 chkpkg cifs-utils
 dieifnotinpath smbclient
 
+get_ssid() {
+  if inpath nmcli; then  # preferred/modern approach
+    # Avoid triggering a Wi-Fi rescan; we only need the active SSID
+    nmcli -t --escape no -f ACTIVE,SSID dev wifi list --rescan no 2>/dev/null | awk -F: '$1=="yes"{print substr($0,5); exit}'
+  elif inpath iwgetid; then  # legacy/deprecated approach
+    iwgetid --raw
+  else
+    return 1
+  fi
+}
+
 if [ "$1" ] ; then
    smb_server="$1"
 else
    echo "optional samba domain name or server IP parameter omitted, trying SSID-based lookup"
-   if inpath iwgetid && echo -n "SSID=" && ssid="$(iwgetid --raw)" && echo -n "$ssid" && lupfn="/home/$USER/.smbserver.for.ssid.$ssid" && echo -n ", lupfn=$lupfn" && read -r smb_server<"$lupfn" ; then
-      echo ", '$smb_server'"
-   else
-      die ", SSID-based lookup failed, giving up"
-   fi
+   echo -n "SSID="
+   ssid="$(get_ssid)" || die ", SSID-based lookup failed (no nmcli/iwgetid), giving up"
+   echo -n "$ssid"
+   lupfn="$HOME/.smbserver.for.ssid.$ssid"
+   echo -n ", lupfn=$lupfn"
+   read -r smb_server <"$lupfn" || die ", could not read server from $lupfn"
+   echo ", '$smb_server'"
 fi
 
 # sample content for smbclient credential file:
@@ -29,8 +42,8 @@ fi
 # username=smbusername
 # password=smbpassword
 smbclient_creds_fn="/home/$USER/.smb.credentials.$smb_server" ; test -f "$smbclient_creds_fn" || die "you haven't created $smbclient_creds_fn"
-uid="$(grep -F "$USER" /etc/passwd | cut -d ':' -f3)"
-gid="$(grep -F "$USER" /etc/passwd | cut -d ':' -f4)"
+uid="$(id -u)"
+gid="$(id -g)"
 srcfn="$(mktemp /tmp/autofstmpconf.XXXXX)" ; chmod 644 "$srcfn"
 
 for shnm in $(smbclient -A "$smbclient_creds_fn" -gL "$smb_server" | grep -F Disk | cut -d '|' -f2) ; do
