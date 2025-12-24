@@ -54,10 +54,47 @@ done
 num_smb_disks="$(<"$srcfn" wc -l)"
 echo "$num_smb_disks SMB disk shares found on $smb_server"
 # since `systemctl restart autofs` can be disruptive and time-consuming, avoid unless config has changed
-destfn="/etc/auto.smbmedia"
-if sudo /bin/sh -c "cmp -s '$destfn' '$srcfn'" ; then
+
+dest_map="/etc/auto.smbmedia"
+master_dir="/etc/auto.master.d"
+master_entry="${master_dir}/smbmedia.autofs"
+master_line='/-  /etc/auto.smbmedia'
+
+changed=0
+
+# --- update the direct map (/etc/auto.smbmedia) ---
+if sudo test -f "$dest_map" && sudo cmp -s "$srcfn" "$dest_map"; then
    rm -f "$srcfn"
-   echo "$destfn would not change, doing nothing"
+   echo "$dest_map would not change, doing nothing"
 else
-   sudo /bin/sh -c "rm -f '$destfn' ; mv '$srcfn' '$destfn' && chown root:root '$destfn' && echo 'restarting autofs service' && systemctl restart autofs"
+   tmp_map="$(mktemp)"
+   # install -> correct owner/mode; mv -> atomic replace
+   sudo install -o root -g root -m 0644 "$srcfn" "$tmp_map"
+   sudo mv -f "$tmp_map" "$dest_map"
+   rm -f "$srcfn"
+   changed=1
+   echo "updated $dest_map"
+fi
+
+# --- ensure the master map entry exists (/etc/auto.master.d/smbmedia.autofs) ---
+tmp_master="$(mktemp)"
+printf '%s\n' "$master_line" > "$tmp_master"
+
+if sudo test -f "$master_entry" && sudo cmp -s "$tmp_master" "$master_entry"; then
+  rm -f "$tmp_master"
+  echo "$master_entry unchanged"
+else
+  sudo mkdir -p "$master_dir"
+  sudo install -o root -g root -m 0644 "$tmp_master" "$master_entry"
+  rm -f "$tmp_master"
+  changed=1
+  echo "updated $master_entry"
+fi
+
+# --- restart only if needed ---
+if [ "$changed" -eq 1 ]; then
+  echo "restarting autofs service"
+  sudo systemctl restart autofs
+else
+  echo "no changes; not restarting autofs"
 fi
