@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
-
 set -uo pipefail  # NO -e!!!
 
-# Logging (file + stderr) since this script is run by X (noninteractively)
-LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}"
-LOG_FILE="${LOG_FILE:-$LOG_DIR/mirror4k.log}"
-mkdir -p "$LOG_DIR" ; echo "LOG_DIR $LOG_DIR"
 ts() { printf '%(%Y%m%d_%H%M%S)T' -1; }  # bash builtin timestamp
+
+# Logging (file + stderr) since this script is run noninteractively
+init_logging() {
+  local uid
+  uid="$(id -u)"
+
+  if [[ -n "${LOG_FILE-}" ]]; then
+    : # respect caller
+  elif [[ "$uid" -eq 0 ]]; then
+    LOG_FILE="/var/log/mirror4k.log"
+  else
+    local state_dir="${XDG_STATE_HOME:-$HOME/.local/state}"
+    LOG_FILE="$state_dir/mirror4k.log"
+  fi
+
+  mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+}
+
 log() {
   local level="$1"; shift
   printf '%s [%s] %s\n' "$(ts)" "$level" "$*" | tee -a "$LOG_FILE" >&2
@@ -14,46 +27,72 @@ log() {
 info()  { log INFO  "$*"; }
 warn()  { log WARN  "$*"; }
 error() { log ERROR "$*"; }
-die() { printf '%s [%s] %s\n' "$(ts)" "$level" "${@+$@$'\n'}" | tee -a "$LOG_FILE" >&2 ; exit 1 ; }
+die()   { error "$*"; exit 1; }
 
-# die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
 see() ( { set -x; } 2>/dev/null ; "$@" )
-need() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+
+need() { command -v "$1" >/dev/null 2>&1 || die "$1 not in PATH"; }
+
+ensure_x_env() {
+  local ix auth
+  # DISPLAY: if unset, try :0 when X11 socket exists
+  if [[ -z "${DISPLAY-}" ]]; then
+    for ix in {1..60}; do
+      if [[ -S /tmp/.X11-unix/X0 ]]; then
+        export DISPLAY=":0"
+        info "DISPLAY was unset; defaulting to DISPLAY=:0"
+        break
+      fi
+      sleep 0.5
+    done
+
+    [[ -n "${DISPLAY-}" ]] || die "DISPLAY is not set and /tmp/.X11-unix/X0 not present after waiting; X is not up yet"
+  fi
+
+  # XAUTHORITY: if unset, try to discover from Xorg (-auth /path/to/file)
+  if [[ -z "${XAUTHORITY-}" ]]; then
+    auth="$(pgrep -a Xorg 2>/dev/null | sed -n 's/.* -auth \([^ ]*\).*/\1/p' | head -n 1 || true)"
+    if [[ -n "$auth" && -r "$auth" ]]; then
+      export XAUTHORITY="$auth"
+      info "XAUTHORITY was unset; discovered XAUTHORITY=$XAUTHORITY"
+    else
+      warn "XAUTHORITY is unset and could not be discovered from Xorg args. If xrandr fails, set XAUTHORITY explicitly."
+    fi
+  fi
+
+  # Quick sanity check (will fail fast if auth is wrong)
+  xrandr --query >/dev/null 2>&1 || die "Cannot query X via xrandr (DISPLAY=$DISPLAY, XAUTHORITY=${XAUTHORITY-<unset>})"
+}
+
+dump_xrandr_connectors() {
+  info "xrandr connectors snapshot (DISPLAY=$DISPLAY XAUTHORITY=${XAUTHORITY-<unset>}):"
+  xrandr --query 2>&1 | awk '/ connected| disconnected/{print "  " $0}' | tee -a "$LOG_FILE" >&2
+  info "DISP_primary=$(printf %q "$DISP_primary") DISP_4k=$(printf %q "$DISP_4k")"
+}
+
+init_logging
 need xrandr
+ensure_x_env
 
-[[ -n "${DISPLAY-}" ]] || die "DISPLAY is not set; run this inside your X11 session"
+# Adjust these to match `xrandr --query` output names on your system
+DISP_primary="eDP"        RES_DISP_primary="1920x1080"
+DISP_4k="HDMI-A-0"        RES_DISP_4k="3840x2160"
 
-#
-# scenario: primary laptop screen is 1080p and unusable; I want to connect a
-# 4K TV to HDMI and use it as the system's primary display, while avoiding
-# weird behaviors like all of the displayed windows being migrated to the
-# primary/unusable display when I power-off the TV.
-#
-# The soln impl here is to have the 4K TV mirror the primary display while
-# being in 4K resolution mode in all respects.
-#
-
-# Run
-# xrandr --query
-# to discover the DISP_ and RES_ values to use for your displays
-
-DISP_primary="eDP"  RES_DISP_primary="1920x1080"
-DISP_4k="HDMI-A-0"  RES_DISP_4k="3840x2160"
-
-# Wait up to ~10 seconds for HDMI to appear connected
-for _ in {1..20}; do
-  if xrandr --query | grep -qP "^\Q$DISP_4k connected"; then
+# Wait up to ~120 seconds for HDMI to appear connected
+for _ in {1..60}; do
+  if xrandr --query | grep -q "^${DISP_4k}[[:space:]]connected"; then
     if see xrandr --fb "$RES_DISP_4k" \
-           --output "$DISP_4k" --mode "$RES_DISP_4k" --primary \
-           --output "$DISP_primary"  --mode "$RES_DISP_primary" --scale-from "$RES_DISP_4k" --same-as "$DISP_4k"
-      then
+         --output "$DISP_4k" --mode "$RES_DISP_4k" --primary \
+         --output "$DISP_primary" --mode "$RES_DISP_primary" --scale-from "$RES_DISP_4k" --same-as "$DISP_4k"
+    then
       info "mirror-setup successful!"
       exit 0
     fi
     warn "FAILED to mirror $DISP_primary ($RES_DISP_primary) to $DISP_4k ($RES_DISP_4k)"
   fi
-  sleep 0.5
+  sleep 2
 done
 
-error "FAILED: '$DISP_4k connected' never found"
-exit 1
+dump_xrandr_connectors
+warn "FAILED: '$DISP_4k connected' never found"
+exit 0
