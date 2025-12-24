@@ -30,6 +30,11 @@ Why:
      off/on).  The only sane solution is to *mirror* the displays, and do so
      in 4K resolution, which is what %~dp0/mirror4k does.
 
+The intended configuration: a 4K framebuffer on HDMI with the laptop panel mirroring via scaling:
+
+   * eDP connected 3840x2160+0+0 ... but with 1920x1080 ... *current +preferred and a Transform of 2.000000 on X and Y, indicating the internal panel is being driven at 1920x1080 and scaled to match the framebuffer.
+   * HDMI-A-0 connected primary 3840x2160+0+0 ... shows the TV is the primary output at 3840x2160.
+
 ### "as soon as possible"
 
 %~dp0/mirror4k *can* be run from the laptop post-CBPP-GUI-login, but that's
