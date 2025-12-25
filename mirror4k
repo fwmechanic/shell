@@ -38,6 +38,7 @@ ensure_x_env() {
   # DISPLAY: if unset, try :0 when X11 socket exists
   if [[ -z "${DISPLAY-}" ]]; then
     for ix in {1..60}; do
+      : "$ix"  # quiet shellcheck
       if [[ -S /tmp/.X11-unix/X0 ]]; then
         export DISPLAY=":0"
         info "DISPLAY was unset; defaulting to DISPLAY=:0"
@@ -78,13 +79,100 @@ ensure_x_env
 DISP_primary="eDP"        RES_DISP_primary="1920x1080"
 DISP_4k="HDMI-A-0"        RES_DISP_4k="3840x2160"
 
+log_hdmi_props() {
+  info "HDMI properties on $DISP_4k:"
+  xrandr --verbose | awk '
+    $1=="'"$DISP_4k"'" && ($2=="connected" || $2=="disconnected") {p=1}
+    p && /^[A-Za-z].*(connected|disconnected)/ && $1!="'"$DISP_4k"'" {exit}
+    p && /(Colorspace|content type|max bpc)/ {print "  " $0}
+  ' | tee -a "$LOG_FILE" >&2
+}
+
+xrandr_supports_prop_value() {
+  # usage: xrandr_supports_prop_value HDMI-A-0 "content type" "Graphics"
+  local out="$1" prop="$2" val="$3"
+  xrandr --verbose | awk -v out="$out" -v prop="$prop" -v val="$val" '
+    $1==out && ($2=="connected" || $2=="disconnected") {p=1}
+    p && /^[A-Za-z].*(connected|disconnected)/ && $1!=out {exit}
+    p && $1==prop":" { # property line
+      # consume rest of line; supported values appear on subsequent indented line(s) in your output
+      got=1
+    }
+    p && got && $1=="supported:" {
+      # check if val is one of the supported comma-separated tokens
+      line=$0
+      sub(/^.*supported:[[:space:]]*/, "", line)
+      gsub(/,/, "", line)
+      n=split(line, a, /[[:space:]]+/)
+      for (i=1; i<=n; i++) if (a[i]==val) {exit 0}
+      exit 1
+    }
+  ' >/dev/null 2>&1
+}
+
+apply_hdmi_pc_tweaks() {
+  local changed=0
+
+  if xrandr_supports_prop_value "$DISP_4k" "Colorspace" "Default"; then
+    local cur
+    cur="$(xrandr --verbose | awk '
+      $1=="'"$DISP_4k"'" && ($2=="connected" || $2=="disconnected") {p=1}
+      p && /^[A-Za-z].*(connected|disconnected)/ && $1!="'"$DISP_4k"'" {exit}
+      p && $1=="Colorspace:" {print $2; exit}
+    ')"
+    if [[ "$cur" != "Default" ]]; then
+      xrandr --output "$DISP_4k" --set "Colorspace" "Default" || true
+      changed=1
+    fi
+  else
+    warn "Skipping Colorspace=Default (not supported on $DISP_4k)"
+  fi
+
+  if xrandr_supports_prop_value "$DISP_4k" "content type" "Graphics"; then
+    local cur
+    cur="$(xrandr --verbose | awk '
+      $1=="'"$DISP_4k"'" && ($2=="connected" || $2=="disconnected") {p=1}
+      p && /^[A-Za-z].*(connected|disconnected)/ && $1!="'"$DISP_4k"'" {exit}
+      p && $1=="content" && $2=="type:" {print $3; exit}
+    ')"
+    if [[ "$cur" != "Graphics" ]]; then
+      xrandr --output "$DISP_4k" --set "content type" "Graphics" || true
+      changed=1
+    fi
+  else
+    warn "Skipping content type=Graphics (not supported on $DISP_4k)"
+  fi
+
+  # max bpc: range property; read current and only set if needed
+  local cur_bpc
+  cur_bpc="$(xrandr --verbose | awk '
+    $1=="'"$DISP_4k"'" && ($2=="connected" || $2=="disconnected") {p=1}
+    p && /^[A-Za-z].*(connected|disconnected)/ && $1!="'"$DISP_4k"'" {exit}
+    p && $1=="max" && $2=="bpc:" {print $3; exit}
+  ')"
+  if [[ -n "$cur_bpc" && "$cur_bpc" != "8" ]]; then
+    if xrandr --output "$DISP_4k" --set "max bpc" 8 >/dev/null 2>&1; then
+      changed=1
+    else
+      warn "Skipping max bpc=8 (not supported or rejected on $DISP_4k)"
+    fi
+  fi
+
+  if [[ "$changed" -eq 1 ]]; then
+    info "Applied HDMI PC tweaks on $DISP_4k (Colorspace=Default, content=Graphics, max_bpc=8)"
+  fi
+}
+
 # Wait up to ~120 seconds for HDMI to appear connected
 for _ in {1..60}; do
   if xrandr --query | grep -q "^${DISP_4k}[[:space:]]connected"; then
+    apply_hdmi_pc_tweaks
     if see xrandr --fb "$RES_DISP_4k" \
          --output "$DISP_4k" --mode "$RES_DISP_4k" --primary \
          --output "$DISP_primary" --mode "$RES_DISP_primary" --scale-from "$RES_DISP_4k" --same-as "$DISP_4k"
     then
+      apply_hdmi_pc_tweaks
+      log_hdmi_props
       info "mirror-setup successful!"
       exit 0
     fi
