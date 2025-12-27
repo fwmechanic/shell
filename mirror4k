@@ -34,35 +34,53 @@ see() ( { set -x; } 2>/dev/null ; "$@" )
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 not in PATH"; }
 
 ensure_x_env() {
-  local ix auth
-  # DISPLAY: if unset, try :0 when X11 socket exists
+  local ix dpy_num sock auth xcmd
+
+  # If DISPLAY is unset, prefer :0 once its socket appears (same intent as today).
   if [[ -z "${DISPLAY-}" ]]; then
-    for ix in {1..60}; do
-      : "$ix"  # quiet shellcheck
-      if [[ -S /tmp/.X11-unix/X0 ]]; then
-        export DISPLAY=":0"
-        info "DISPLAY was unset; defaulting to DISPLAY=:0"
-        break
-      fi
+    export DISPLAY=":0"
+    info "DISPLAY was unset; defaulting to DISPLAY=:0"
+  fi
+
+  # Compute socket for DISPLAY (handles :0, :1, :0.0, etc.)
+  dpy_num="${DISPLAY#:}"
+  dpy_num="${dpy_num%%.*}"
+  sock="/tmp/.X11-unix/X${dpy_num}"
+
+  # Wait for X to be usable: socket exists + xauth (if needed) + xrandr responds.
+  # 60s at 0.5s intervals (adjust if you want)
+  for ix in {1..120}; do
+    : "$ix"
+
+    # 1) Wait for the display socket
+    if [[ ! -S "$sock" ]]; then
       sleep 0.5
-    done
-
-    [[ -n "${DISPLAY-}" ]] || die "DISPLAY is not set and /tmp/.X11-unix/X0 not present after waiting; X is not up yet"
-  fi
-
-  # XAUTHORITY: if unset, try to discover from Xorg (-auth /path/to/file)
-  if [[ -z "${XAUTHORITY-}" ]]; then
-    auth="$(pgrep -a Xorg 2>/dev/null | sed -n 's/.* -auth \([^ ]*\).*/\1/p' | head -n 1 || true)"
-    if [[ -n "$auth" && -r "$auth" ]]; then
-      export XAUTHORITY="$auth"
-      info "XAUTHORITY was unset; discovered XAUTHORITY=$XAUTHORITY"
-    else
-      warn "XAUTHORITY is unset and could not be discovered from Xorg args. If xrandr fails, set XAUTHORITY explicitly."
+      continue
     fi
-  fi
 
-  # Quick sanity check (will fail fast if auth is wrong)
-  xrandr --query >/dev/null 2>&1 || die "Cannot query X via xrandr (DISPLAY=$DISPLAY, XAUTHORITY=${XAUTHORITY-<unset>})"
+    # 2) If XAUTHORITY is unset, keep trying to discover it
+    if [[ -z "${XAUTHORITY-}" ]]; then
+      # Match likely Xorg command line (Xorg, Xorg.bin, sometimes X)
+      # Prefer a line that references the display number.
+      xcmd="$(pgrep -a -f '(^|/)(Xorg|Xorg\.bin|X)\b' 2>/dev/null | grep -E "(:${dpy_num}\b| :${dpy_num}\b)" | head -n 1 || true)"
+      [[ -n "$xcmd" ]] || xcmd="$(pgrep -a -f '(^|/)(Xorg|Xorg\.bin|X)\b' 2>/dev/null | head -n 1 || true)"
+
+      auth="$(sed -n 's/.* -auth \([^ ]*\).*/\1/p' <<<"$xcmd" | head -n 1 || true)"
+      if [[ -n "$auth" && -r "$auth" ]]; then
+        export XAUTHORITY="$auth"
+        info "XAUTHORITY was unset; discovered XAUTHORITY=$XAUTHORITY"
+      fi
+    fi
+
+    # 3) If xrandr works, we are done.
+    if xrandr --query >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 0.5
+  done
+
+  die "Cannot query X via xrandr after waiting (DISPLAY=$DISPLAY, sock=$sock, XAUTHORITY=${XAUTHORITY-<unset>})"
 }
 
 dump_xrandr_connectors() {

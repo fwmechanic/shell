@@ -156,13 +156,14 @@ write_unit_files_idempotent() {
   info "Ensuring unit file (idempotent)"
 
   write_if_changed "$svc" <<EOF
+
 [Unit]
 Description=Configure HDMI mirroring via xrandr
+Wants=display-manager.service
 After=display-manager.service
 
 [Service]
 Type=oneshot
-Environment=DISPLAY=:0
 Environment=LOG_FILE=/var/log/mirror4k.log
 ExecStart=/usr/local/bin/mirror4k
 

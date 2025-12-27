@@ -14,7 +14,7 @@ Minimal approach: Configure lid close action = "Nothing / Do nothing" in that po
 
 ## as soon as possible, switch display operation to mirror laptop screen to 4K TV (with 4K resolution)
 
-tl;dr: run `sudo /home/kg/my/repos/shell/mirror4k-install-systemd` once to install %~dp0/mirror4k
+tl;dr: cd to this dir and run `sudo ./mirror4k-install-systemd` once to install %~dp0/mirror4k
 
 Why:
 
