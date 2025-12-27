@@ -1,23 +1,22 @@
 #!/usr/bin/env bash
-# mirror4k-install-systemd
-#
-# Installs / updates mirror4k and a single systemd oneshot service (no .path unit).
-#
-# Usage:
-#   sudo ./mirror4k-install-systemd [SOURCE_SCRIPT] [INSTALL_PATH]
-#   sudo ./mirror4k-install-systemd --remove
-#
-# Examples:
-#   sudo ./mirror4k-install-systemd ./mirror4k /usr/local/bin/mirror4k
-#   sudo ./mirror4k-install-systemd /home/kg/bin/mirror4k /home/kg/bin/mirror4k   # run in place
-#
-# Tunables (env):
-#   UNIT_NAME=mirror4k
-#   DISPLAY_ENV=:0
-#   LOG_FILE=/var/log/mirror4k-setup.log
-#   MIRROR_LOG_FILE=/var/log/mirror4k.log
 
 set -uo pipefail  # NO -e
+
+usage() {
+  cat >&2 <<EOF
+Installs/updates mirror4k as a single systemd oneshot service (no .path unit).
+Examples:
+  sudo ./mirror4k-install-systemd ./mirror4k
+Usage:
+  sudo $0 [SOURCE_SCRIPT]
+  sudo $0 --remove
+
+Env overrides:
+  SERVICE_NAME=mirror4k
+  INSTALLER_LOG_FILE=/var/log/mirror4k-setup.log
+EOF
+  exit 2
+}
 
 ts() { printf '%(%Y%m%d_%H%M%S)T' -1; }
 
@@ -25,39 +24,37 @@ init_logging() {
   local uid
   uid="$(id -u 2>/dev/null || echo 99999)"
 
-  if [[ -n "${LOG_FILE-}" ]]; then
+  if [[ -n "${INSTALLER_LOG_FILE-}" ]]; then
     :
   elif [[ "$uid" -eq 0 ]]; then
-    LOG_FILE="/var/log/mirror4k-setup.log"
+    INSTALLER_LOG_FILE="/var/log/mirror4k-setup.log"
   else
     local state_dir="${XDG_STATE_HOME:-$HOME/.local/state}"
-    LOG_FILE="$state_dir/mirror4k-setup.log"
+    INSTALLER_LOG_FILE="$state_dir/mirror4k-setup.log"
   fi
 
-  mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+  mkdir -p "$(dirname "$INSTALLER_LOG_FILE")" 2>/dev/null || true
 }
 
 log() {
   local level="$1"; shift
-  printf '%s [%s] %s\n' "$(ts)" "$level" "$*" | tee -a "$LOG_FILE" >&2
+  printf '%s [%s] %s\n' "$(ts)" "$level" "$*" | tee -a "$INSTALLER_LOG_FILE" >&2
 }
 info()  { log INFO  "$*"; }
 warn()  { log WARN  "$*"; }
-error(){ log ERROR "$*"; }
-die()  { error "$*"; exit 1; }
+error() { log ERROR "$*"; }
+die()   { error "$*"; exit 1; }
 
 see() ( { set -x; } 2>/dev/null ; "$@" )
 
-need() { command -v "$1" >/dev/null 2>&1 || die "$1 not in PATH"; }
+inpath_or_die() { command -v "$1" >/dev/null 2>&1 || die "$1 not in PATH"; }
 
 # -------------------------- config --------------------------
 
-UNIT_NAME="${UNIT_NAME:-mirror4k}"
-DISPLAY_ENV="${DISPLAY_ENV:-:0}"
-MIRROR_LOG_FILE="${MIRROR_LOG_FILE:-/var/log/mirror4k.log}"
+SERVICE_NAME="${SERVICE_NAME:-mirror4k}"
 
 SRC_SCRIPT="${1:-./mirror4k}"
-INSTALL_PATH="${2:-/usr/local/bin/mirror4k}"
+INSTALL_PATH="/usr/local/bin/$SERVICE_NAME"
 
 # -------------------------- helpers --------------------------
 
@@ -101,9 +98,10 @@ install_or_fixup_script() {
   local dst="$2"
 
   if [[ "$src" == "$dst" ]]; then
-    info "Install path equals source path (run in place): $dst"
+    info "Source already at install path; ensuring mode/owner: $dst"
     [[ -x "$dst" ]] || see chmod 0755 "$dst" || die "Failed to chmod +x: $dst"
     ensure_mode "$dst" 0755
+    see chown root:root "$dst" 2>/dev/null || warn "chown root:root failed (continuing)"
     return 0
   fi
 
@@ -151,12 +149,11 @@ write_if_changed() {
 }
 
 write_unit_files_idempotent() {
-  local svc="/etc/systemd/system/${UNIT_NAME}.service"
+  local svc="/etc/systemd/system/${SERVICE_NAME}.service"
 
   info "Ensuring unit file (idempotent)"
 
   write_if_changed "$svc" <<EOF
-
 [Unit]
 Description=Configure HDMI mirroring via xrandr
 Wants=display-manager.service
@@ -164,8 +161,7 @@ After=display-manager.service
 
 [Service]
 Type=oneshot
-Environment=LOG_FILE=/var/log/mirror4k.log
-ExecStart=/usr/local/bin/mirror4k
+ExecStart=$INSTALL_PATH
 
 [Install]
 WantedBy=graphical.target
@@ -175,7 +171,6 @@ EOF
 }
 
 daemon_reload_if_needed() {
-  need systemctl
   if [[ "${UNIT_CHANGED:-0}" -eq 1 ]]; then
     info "Unit content changed; reloading systemd daemon"
     see systemctl daemon-reload || die "systemctl daemon-reload failed"
@@ -185,8 +180,7 @@ daemon_reload_if_needed() {
 }
 
 enable_and_maybe_test_run_service() {
-  need systemctl
-  local s="${UNIT_NAME}.service"
+  local s="${SERVICE_NAME}.service"
 
   if systemctl is-enabled --quiet "$s" 2>/dev/null; then
     info "Already enabled: $s"
@@ -206,23 +200,17 @@ enable_and_maybe_test_run_service() {
 }
 
 show_status() {
-  need systemctl
-  info "Status: ${UNIT_NAME}.service"
-  systemctl --no-pager status "${UNIT_NAME}.service" 2>&1 | tee -a "$LOG_FILE" >&2 || true
-
-  info "Logs:"
-  info "  journalctl -u ${UNIT_NAME}.service -b --no-pager"
-  info "  tail -n 200 ${MIRROR_LOG_FILE}"
+  info "Status: ${SERVICE_NAME}.service"
+  systemctl --no-pager status "${SERVICE_NAME}.service" 2>&1 | tee -a "$INSTALLER_LOG_FILE" >&2 || true
+  info "Logs: sudo journalctl -o short-iso --no-hostname -u mirror4k.service -b --no-pager"
 }
 
 remove_units() {
-  need systemctl
+  local svc="/etc/systemd/system/${SERVICE_NAME}.service"
 
-  local svc="/etc/systemd/system/${UNIT_NAME}.service"
-
-  info "Disabling/stopping (best effort): ${UNIT_NAME}.service"
-  if ! systemctl disable --now "${UNIT_NAME}.service" >/dev/null 2>&1; then
-    warn "Could not disable/stop ${UNIT_NAME}.service (continuing)"
+  info "Disabling/stopping (best effort): ${SERVICE_NAME}.service"
+  if ! systemctl disable --now "${SERVICE_NAME}.service" >/dev/null 2>&1; then
+    warn "Could not disable/stop ${SERVICE_NAME}.service (continuing)"
   fi
 
   info "Removing unit file (if present)"
@@ -233,22 +221,7 @@ remove_units() {
   info "Reloading systemd daemon"
   see systemctl daemon-reload || die "systemctl daemon-reload failed"
 
-  info "Removed: ${UNIT_NAME}.service"
-}
-
-usage() {
-  cat >&2 <<EOF
-Usage:
-  sudo $0 [SOURCE_SCRIPT] [INSTALL_PATH]
-  sudo $0 --remove
-
-Env overrides:
-  UNIT_NAME=mirror4k
-  DISPLAY_ENV=:0
-  LOG_FILE=/var/log/mirror4k-setup.log
-  MIRROR_LOG_FILE=/var/log/mirror4k.log
-EOF
-  exit 2
+  info "Removed: ${SERVICE_NAME}.service"
 }
 
 # -------------------------- main --------------------------
@@ -256,12 +229,12 @@ EOF
 init_logging
 require_root
 
-need cat
-need tee
-need cmp
-need mktemp
-need stat
-need systemctl
+inpath_or_die cat
+inpath_or_die tee
+inpath_or_die cmp
+inpath_or_die mktemp
+inpath_or_die stat
+inpath_or_die systemctl
 
 if [[ "${1-}" == "--help" || "${1-}" == "-h" ]]; then
   usage
