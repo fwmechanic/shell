@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+7zwrap x *.rar && m3u
