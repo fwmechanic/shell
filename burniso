@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+die()  { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" ) ;
+have() { command -v "$1" &>/dev/null; }
+
+# ISO=Fedora-Sway-Live-x86_64-42-1.1.iso
+# DEV=/dev/sdX   # <-- your USB device (not a partition)
+
+have lsblk  || die "missing needed prog: lsblk"
+have umount || die "missing needed prog: umount"
+
+unmount_partitions() {
+  # List all partitions under $DEV (skip the first line, which is the disk itself)
+  lsblk -lnpo NAME "$DEV" | tail -n +2 | while read -r part; do
+      mp=$(lsblk -no MOUNTPOINT "$part")
+      if [ -n "$mp" ]; then
+          echo "Unmounting $part from $mp"
+          sudo umount "$part" || die "Failed to unmount $part"
+      fi
+  done
+  }
+
+
+test -f "$ISO" || die "ISO is not a file: $ISO"
+if ! test -b "$DEV"; then
+   lsblk
+   die "DEV is not a block device: $DEV"
+   fi
+
+echo "ISO $ISO"
+echo "DEV $DEV"
+
+unmount_partitions
+
+if test -z "$1"; then  # $1 is presumably "check" or similar
+   echo "burning device..."
+   sudo dd if="$ISO" of="$DEV" bs=4M status=progress conv=fsync
+fi
+
+bytecount=$(stat -c%s "$ISO")  # ISO size in bytes
+echo "comparing first $bytecount bytes of $DEV"
+sudo cmp -n "$bytecount" "$ISO" "$DEV" || die "comparison FAILED"
+echo "OK: USB $DEV matches ISO"
+
+if have udisksctl; then
+    sudo udisksctl power-off -b "$DEV" || die "power-off FAILED: $DEV"
+elif have eject; then
+    sudo eject "$DEV" || die "eject FAILED: $DEV"
+else
+    echo "No eject/power-off tool found; data is written, just ensure nothing is mounted before unplugging."
+fi
