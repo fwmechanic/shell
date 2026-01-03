@@ -437,8 +437,7 @@ def load_schema(filename):
 # Main function and command-line interface.
 # -----------------------------------------------------------------------------
 def main():
-    now = datetime.datetime.now()
-    default_prefix = f"pymts{now.strftime('%y')}"
+    default_prefix = "pymts"
     parser = argparse.ArgumentParser(description="Monthly Payment Report Generator")
     parser.add_argument("--pymts-prefix", default=default_prefix,
                         help=f"Prefix for payment files (default: {default_prefix}). All files starting with this prefix will be processed.")
