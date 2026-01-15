@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Simple auto-upgrade for Codex CLI (Yarn global)
+
+set -euo pipefail
+
+LOGFILE="$HOME/.codex-upgrade.log"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Codex upgrade..." >>"$LOGFILE"
+
+# Upgrade Codex
+yarn global upgrade @openai/codex@latest >>"$LOGFILE" 2>&1 || {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Upgrade failed" >>"$LOGFILE"
+  exit 1
+}
+
+# Record the version
+codex --version >>"$LOGFILE" 2>&1
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Upgrade complete" >>"$LOGFILE"
