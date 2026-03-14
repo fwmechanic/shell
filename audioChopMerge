@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# produce out.mp3 as a concatenation of the segments of $audioFnm as enumerated in $segmentsFnm
+# (used to remove ads advertisements commercials from eg podcasts)
+
+# sample content of $segmentsFnm:
+# 00:00:00 00:06:21     intro
+# 00:08:03 00:21:20     seg1
+# 00:22:51 00:35:14     seg2
+# 00:36:47.75 00:49:26  seg3
+# 00:51:07 02:09:41.5   seg4
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+
+# input files
+                                     test "$1"              || die "missing audio filename"
+audioFnm="$1"                      ; test -f "$audioFnm"    || die "not a (audio) file: $audioFnm"
+segmentsFnm="${audioFnm}.segments" ; test -f "$segmentsFnm" || die "not a (segments) file: $segmentsFnm"
+
+concatinput="${audioFnm}.ffmpegconcat" ; rm -f "$concatinput" || die "not rm'd: $concatinput"  # we generate below
+
+while read -r start end label; do
+   printf '|%s| |%s| |%s| |%s|\n' "$audioFnm" "$start" "$end" "$label"
+   rm -f "${label}.mp3"
+   see ffmpeg -nostdin -i "$audioFnm" -ss "$start" -to "$end" -c copy "${label}.mp3"
+done < "$segmentsFnm"
+
+while read -r start end label; do
+  echo "file '$audioFnm'"
+  echo "inpoint $start"
+  echo "outpoint $end"
+done < "$segmentsFnm" > "$concatinput"
+
+ffmpeg -f concat -safe 0 -i "$concatinput" -c copy out.mp3
