@@ -1,0 +1,37 @@
+#!/bin/bash
+set -uo pipefail
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+
+[[ -n "${1:-}" ]] || die "Usage: $(basename "$0") <file> [poll_interval]"
+[[ -f "$1" ]]     || die "Not a file: $1"
+
+FILE="$(realpath "$1")"    || die "Cannot resolve path: $1"
+FILE_DIR="$(dirname "$FILE")"
+BACKUP_DIR="${FILE_DIR}/.backups"
+POLL_INTERVAL="${2:-5}"
+
+mkdir -p "$BACKUP_DIR"     || die "Cannot create backup dir: $BACKUP_DIR"
+
+xdg-open "$FILE"           || die "xdg-open failed for: $FILE"
+
+echo "Watching: $FILE"
+echo "Backups:  $BACKUP_DIR"
+echo "Polling every ${POLL_INTERVAL}s"
+
+LAST_MTIME=$(stat --format=%Y "$FILE") || die "Cannot stat: $FILE"
+
+while true; do
+    sleep "$POLL_INTERVAL"
+    CURRENT_MTIME=$(stat --format=%Y "$FILE" 2>/dev/null) || continue
+    if [[ "$CURRENT_MTIME" != "$LAST_MTIME" ]]; then
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        BASENAME=$(basename "$FILE" .ods)
+        cp "$FILE" "$BACKUP_DIR/${BASENAME}_${TIMESTAMP}.ods" || {
+            echo "Warning: backup failed at $TIMESTAMP" >&2
+            continue
+        }
+        echo "Backed up: ${BASENAME}_${TIMESTAMP}.ods"
+        LAST_MTIME="$CURRENT_MTIME"
+    fi
+done
