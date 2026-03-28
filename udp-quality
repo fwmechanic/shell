@@ -1,0 +1,119 @@
+#!/bin/bash
+# Test UDP connection quality for real-time audio/video (Google Meet, Zoom, etc.)
+# Usage: udp-quality [interface]
+# Example: udp-quality wlo1
+#          udp-quality enx6e8dbfd4e9dc
+
+IFACE="$1"
+IFACE_FLAG=""
+if [[ -n "$IFACE" ]]; then
+    IFACE_FLAG="-I $IFACE"
+    DEV="$IFACE"
+else
+    DEV=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'dev \K\S+')
+fi
+echo "Testing interface: $DEV"
+
+# Classify interface for logging: enx* = tethering, wlo* = wifi
+if [[ "$DEV" == enx* ]]; then
+    CONN_TYPE="tethering"
+elif [[ "$DEV" == wlo* ]]; then
+    CONN_TYPE="wifi"
+else
+    CONN_TYPE="$DEV"
+fi
+
+LOGDIR="$HOME/.local/log"
+mkdir -p "$LOGDIR"
+LOGFILE="$LOGDIR/udp-quality-${CONN_TYPE}.log"
+
+{
+printf '=== %(%Y-%m-%d %H:%M:%S)T -- %s (%s) ===\n' -1 "$CONN_TYPE" "$DEV"
+echo ""
+
+if false; then  # Speedtest (bandwidth + latency)
+  echo "=== Speedtest ==="
+  SPEED_SRC=""
+  if [[ -n "$IFACE" ]]; then
+      SPEED_SRC=$(ip addr show "$IFACE" 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1)
+  fi
+  if [[ -n "$SPEED_SRC" ]]; then
+      SPEED_OUT=$(timeout 30 speedtest --simple --source "$SPEED_SRC" 2>&1)
+  else
+      SPEED_OUT=$(timeout 30 speedtest --simple 2>&1)
+  fi
+  if echo "$SPEED_OUT" | grep -qiE "error|cannot|unable"; then
+      echo "(speedtest unavailable)"
+  else
+      echo "$SPEED_OUT"
+  fi
+  echo ""
+fi
+
+# ICMP baseline
+echo "=== ICMP ping (baseline) ==="
+PING_OUT=$(ping $IFACE_FLAG -c 30 -i 0.2 8.8.8.8 2>&1)
+echo "$PING_OUT" | tail -2
+echo ""
+
+# UDP test via mtr
+echo "=== UDP path quality (mtr) ==="
+MTR_OUT=$(mtr -u -c 15 -r $IFACE_FLAG 8.8.8.8 2>&1)
+echo "$MTR_OUT" | awk 'NR==1 || ($2 !~ /\?\?\?/)'
+echo ""
+
+if false; then  # TCP test via mtr for comparison
+  echo "=== TCP path quality (mtr) ==="
+  MTR_TCP=$(mtr -T -c 15 -r $IFACE_FLAG 8.8.8.8 2>&1)
+  echo "$MTR_TCP" | awk 'NR==1 || ($2 !~ /\?\?\?/)'
+  echo ""
+fi
+
+# Extract stats for verdict
+LOSS=$(echo "$PING_OUT" | grep -oP '\d+(?=% packet loss)')
+# rtt min/avg/max/mdev = 40.178/50.704/60.825/4.888 ms
+STATS_LINE=$(echo "$PING_OUT" | grep 'rtt min/avg/max/mdev')
+AVG=$(echo "$STATS_LINE" | awk -F'/' '{print $5}')
+JITTER=$(echo "$STATS_LINE" | awk -F'/' '{print $7}' | awk '{print $1}')
+# Check for any hop with >10% UDP loss, excluding non-responding (???) hops
+UDP_LOSS_HOPS=$(echo "$MTR_OUT" | awk 'NR>1 && $3+0 > 10 && $2 !~ /\?\?\?/ {print "  " $0}')
+
+echo "=== VERDICT ==="
+GOOD=true
+
+if [[ -n "$LOSS" ]] && (( LOSS > 2 )); then
+    echo "FAIL: ICMP packet loss ${LOSS}% (>2%)"
+    GOOD=false
+fi
+
+if [[ -n "$AVG" ]] && (( $(echo "$AVG > 100" | bc -l 2>/dev/null || echo 0) )); then
+    echo "WARN: High average latency ${AVG}ms (>100ms)"
+    GOOD=false
+fi
+
+if [[ -n "$JITTER" ]] && (( $(echo "$JITTER > 15" | bc -l 2>/dev/null || echo 0) )); then
+    echo "WARN: High jitter ${JITTER}ms (>15ms)"
+    GOOD=false
+fi
+
+TCP_LOSS_HOPS=$(echo "$MTR_TCP" | awk 'NR>1 && $3+0 > 10 && $2 !~ /\?\?\?/ {print "  " $0}')
+
+if [[ -n "$UDP_LOSS_HOPS" ]]; then
+    echo "FAIL: UDP packet loss >10% at these hops:"
+    echo "$UDP_LOSS_HOPS"
+    GOOD=false
+fi
+
+if [[ -n "$TCP_LOSS_HOPS" ]]; then
+    echo "FAIL: TCP packet loss >10% at these hops:"
+    echo "$TCP_LOSS_HOPS"
+    GOOD=false
+fi
+
+if $GOOD; then
+    echo "OK: Connection looks good for real-time audio/video"
+fi
+} | tee -a "$LOGFILE"
+
+echo "" >> "$LOGFILE"
+echo "Logged to $LOGFILE"
