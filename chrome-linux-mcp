@@ -1,0 +1,14 @@
+#!/bin/bash
+
+die() { printf %s "${@+$@$'\n'}" 1>&2 ; exit 1 ; }
+see() ( { set -x; } 2>/dev/null ; "$@" )
+dieifnotinpath() { command -v "$1" >/dev/null || die "$1 not in PATH"; }
+dieifnotinpath google-chrome-stable
+
+dbgProfileDir="$HOME/.config/google-chrome-debug"
+
+if ! test -d "$dbgProfileDir"; then
+   cp -r "$HOME/.config/google-chrome" "$dbgProfileDir"
+fi
+
+see exec google-chrome-stable --remote-debugging-port=9222 --user-data-dir="$dbgProfileDir" "$@"
