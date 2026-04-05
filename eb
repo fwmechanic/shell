@@ -55,7 +55,7 @@ do1file() (
    [[ "${sanspath,,}" == *[_.]code.zip ]] && die "skipping code-zip file $sanspath"
    [[ -d "$sansext" ]] && die "dir $sansext already exists"
 
-   7z e -o"$sansext" "$1" || die "7z extraction failed"
+   7z e -o"$sansext" "$1" || die "7z extraction failed"  # on Debian/Ubuntu, 7z can fail to extract .rar files if 7zip-rar helper package is not installed
    (cd "$sansext" && find . -type d -empty -delete)   # `7z e ...` can create empty dirs in output dir: delete them
    # above is common to various scripts: unzips $1 into a dir of its own name (minus extension) ($sansext)
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# on Debian/Ubuntu, 7z can fail to extract .rar files if 7zip-rar helper package is not installed
+
 qf -d .
 eb -q *.7z *.zip *.rar ; epall
 pdf_rename_with_copyright_year *.pdf
