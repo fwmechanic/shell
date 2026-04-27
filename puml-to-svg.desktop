@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=puml-to-svg
+Comment=Render PlantUML to SVG and open
+Exec=/home/kg/my/repos/shell/puml-to-svg %f
+NoDisplay=true
+MimeType=text/x-plantuml;

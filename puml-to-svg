@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Render a .puml file to .svg via plantuml, then open it
+# Usage: puml-to-svg path/to/file.puml
+
+set -euo pipefail
+
+input="${1:?Usage: puml-to-svg <file.puml>}"
+if [ ! -f "$input" ]; then
+  echo "File not found: $input" >&2
+  exit 1
+fi
+
+svg="${input%.puml}.svg"
+java -jar ~/bin/plantuml.jar -tsvg "$input"
+xdg-open "$svg" 2>/dev/null &
